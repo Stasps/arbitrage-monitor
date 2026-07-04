@@ -1,0 +1,9 @@
+update_interval: 1
+commission: 0.0004
+pairs:
+  - id: "sber"
+    stock_ticker: "SBER"
+    future_ticker: "SRU6"
+  # - id: "gazp"
+  #   stock_ticker: "GAZP"
+  #   future_ticker: "GZU6"
