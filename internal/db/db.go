@@ -73,7 +73,91 @@ func (db *DB) migrate() error {
 	return nil
 }
 
-// SaveInstrument сохраняет или обновляет данные инструмента
+// GetInstrument получает инструмент из БД по тикеру
+// Принимает: ticker - биржевой тикер
+// Возвращает: *models.Instrument - данные инструмента, nil если не найден, error - ошибка запроса
+func (db *DB) GetInstrument(ticker string) (*models.Instrument, error) {
+	query := `SELECT ticker, figi, instrument_type, lot, expiry_date, go, updated_at
+		FROM instruments WHERE ticker = ?`
+
+	var instr models.Instrument
+	var expiryDate sql.NullString
+	var goVal sql.NullFloat64
+	var updatedAt string
+
+	err := db.conn.QueryRow(query, ticker).Scan(
+		&instr.Ticker,
+		&instr.Figi,
+		&instr.Type,
+		&instr.Lot,
+		&expiryDate,
+		&goVal,
+		&updatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if expiryDate.Valid {
+		t, _ := time.Parse(time.RFC3339, expiryDate.String)
+		instr.ExpiryDate = &t
+	}
+	if goVal.Valid {
+		instr.GO = &goVal.Float64
+	}
+	// Парсим updatedAt
+	instr.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+
+	return &instr, nil
+}
+
+// GetInstrumentByFigi получает инструмент из БД по FIGI идентификатору
+// Принимает: figi - FIGI идентификатор
+// Возвращает: *models.Instrument - данные инструмента, nil если не найден, error - ошибка запроса
+func (db *DB) GetInstrumentByFigi(figi string) (*models.Instrument, error) {
+	query := `SELECT ticker, figi, instrument_type, lot, expiry_date, go, updated_at
+		FROM instruments WHERE figi = ?`
+
+	var instr models.Instrument
+	var expiryDate sql.NullString
+	var goVal sql.NullFloat64
+	var updatedAt string
+
+	err := db.conn.QueryRow(query, figi).Scan(
+		&instr.Ticker,
+		&instr.Figi,
+		&instr.Type,
+		&instr.Lot,
+		&expiryDate,
+		&goVal,
+		&updatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if expiryDate.Valid {
+		t, _ := time.Parse(time.RFC3339, expiryDate.String)
+		instr.ExpiryDate = &t
+	}
+	if goVal.Valid {
+		instr.GO = &goVal.Float64
+	}
+	// Парсим updatedAt
+	instr.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+
+	return &instr, nil
+}
+
+// SaveInstrument сохраняет или обновляет данные инструмента в БД
+// Принимает: instr - данные инструмента
+// Возвращает: error - ошибка при сохранении
 func (db *DB) SaveInstrument(instr *models.Instrument) error {
 	query := `INSERT OR REPLACE INTO instruments 
 		(ticker, figi, instrument_type, lot, expiry_date, go, updated_at)
@@ -105,43 +189,9 @@ func (db *DB) SaveInstrument(instr *models.Instrument) error {
 	return err
 }
 
-// GetInstrument получает инструмент по тикеру
-func (db *DB) GetInstrument(ticker string) (*models.Instrument, error) {
-	query := `SELECT ticker, figi, instrument_type, lot, expiry_date, go, updated_at
-		FROM instruments WHERE ticker = ?`
-
-	var instr models.Instrument
-	var expiryDate sql.NullString
-	var goVal sql.NullFloat64
-
-	err := db.conn.QueryRow(query, ticker).Scan(
-		&instr.Ticker,
-		&instr.Figi,
-		&instr.Type,
-		&instr.Lot,
-		&expiryDate,
-		&goVal,
-		&instr.UpdatedAt,
-	)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	if expiryDate.Valid {
-		t, _ := time.Parse(time.RFC3339, expiryDate.String)
-		instr.ExpiryDate = &t
-	}
-	if goVal.Valid {
-		instr.GO = &goVal.Float64
-	}
-
-	return &instr, nil
-}
-
-// SaveDividend сохраняет данные о дивиденде
+// SaveDividend сохраняет или обновляет данные о дивиденде в БД
+// Принимает: dividend - данные о дивиденде
+// Возвращает: error - ошибка при сохранении
 func (db *DB) SaveDividend(dividend *models.Dividend) error {
 	query := `INSERT OR REPLACE INTO dividends 
 		(ticker, dividend, ex_date, payment_date, updated_at)
@@ -157,7 +207,9 @@ func (db *DB) SaveDividend(dividend *models.Dividend) error {
 	return err
 }
 
-// GetDividend получает ближайший дивиденд по акции (дата выплаты >= today)
+// GetDividend получает ближайший дивиденд по акции (дата выплаты >= сегодня)
+// Принимает: ticker - тикер акции
+// Возвращает: *models.Dividend - данные дивиденда, nil если не найден, error - ошибка запроса
 func (db *DB) GetDividend(ticker string) (*models.Dividend, error) {
 	query := `SELECT ticker, dividend, ex_date, payment_date, updated_at
 		FROM dividends 
@@ -188,7 +240,9 @@ func (db *DB) GetDividend(ticker string) (*models.Dividend, error) {
 	return &div, nil
 }
 
-// SaveLastPrice сохраняет последнюю цену
+// SaveLastPrice сохраняет или обновляет последнюю цену в БД
+// Принимает: price - данные о последней цене
+// Возвращает: error - ошибка при сохранении
 func (db *DB) SaveLastPrice(price *models.LastPrice) error {
 	query := `INSERT OR REPLACE INTO last_prices 
 		(figi, price, price_time, updated_at)
@@ -203,7 +257,9 @@ func (db *DB) SaveLastPrice(price *models.LastPrice) error {
 	return err
 }
 
-// GetLastPrice получает последнюю цену по FIGI
+// GetLastPrice получает последнюю цену из БД по FIGI идентификатору
+// Принимает: figi - FIGI идентификатор
+// Возвращает: *models.LastPrice - данные о цене, nil если не найден, error - ошибка запроса
 func (db *DB) GetLastPrice(figi string) (*models.LastPrice, error) {
 	query := `SELECT figi, price, price_time, updated_at
 		FROM last_prices WHERE figi = ?`

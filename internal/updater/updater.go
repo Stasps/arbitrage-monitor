@@ -10,7 +10,7 @@ import (
 	"arbitrage-monitor/pkg/models"
 )
 
-// Updater - управляет циклом обновления данных
+// Updater - управляет циклом обновления данных для одной пары
 type Updater struct {
 	apiService *api.Service
 	db         *db.DB
@@ -19,6 +19,8 @@ type Updater struct {
 }
 
 // NewUpdater создаёт новый updater
+// Принимает: apiService - сервис API, database - БД, calc - калькулятор, interval - интервал обновления в секундах
+// Возвращает: *Updater
 func NewUpdater(apiService *api.Service, database *db.DB, calc *calculator.Calculator, interval int) *Updater {
 	return &Updater{
 		apiService: apiService,
@@ -28,74 +30,74 @@ func NewUpdater(apiService *api.Service, database *db.DB, calc *calculator.Calcu
 	}
 }
 
-// Start запускает цикл обновления
-func (u *Updater) Start(stockTicker, futureTicker string) {
+// Start запускает бесконечный цикл обновления для пары
+// Принимает: pair - структура с тикерами и FIGI
+// Запускает обновление каждые interval секунд
+func (u *Updater) Start(pair models.Pair) {
 	ticker := time.NewTicker(u.interval)
 	defer ticker.Stop()
 
 	for {
-		u.update(stockTicker, futureTicker)
+		u.update(pair)
 		<-ticker.C
 	}
 }
 
-// update выполняет одно обновление данных
-func (u *Updater) update(stockTicker, futureTicker string) {
-	// 1. Получаем инструменты (из кэша или API)
-	stockInstr, err := u.apiService.GetOrFetchInstrument(stockTicker, false)
+// update выполняет одно обновление данных для пары
+// Принимает: pair - структура с тикерами и FIGI
+// Получает инструменты, цены, выполняет расчёты и выводит результат
+func (u *Updater) update(pair models.Pair) {
+	stockInstr, err := u.apiService.GetOrFetchInstrumentByFigi(pair.StockFigi, false)
 	if err != nil {
-		log.Printf("Ошибка получения акции %s: %v", stockTicker, err)
+		log.Printf("Ошибка получения акции %s: %v", pair.StockTicker, err)
 		return
 	}
 
-	futureInstr, err := u.apiService.GetOrFetchInstrument(futureTicker, true)
+	futureInstr, err := u.apiService.GetOrFetchInstrumentByFigi(pair.FutureFigi, true)
 	if err != nil {
-		log.Printf("Ошибка получения фьючерса %s: %v", futureTicker, err)
+		log.Printf("Ошибка получения фьючерса %s: %v", pair.FutureTicker, err)
 		return
 	}
 
-	// 2. Получаем цены
 	prices, err := u.apiService.GetLastPrices([]string{stockInstr.Figi, futureInstr.Figi})
 	if err != nil {
-		// Используем кэшированные цены
 		log.Printf("API недоступно, использую кэш: %v", err)
 		stockPrice, _ := u.db.GetLastPrice(stockInstr.Figi)
 		futurePrice, _ := u.db.GetLastPrice(futureInstr.Figi)
 		if stockPrice == nil || futurePrice == nil {
 			return
 		}
-		u.processData(stockInstr, futureInstr, stockPrice.Price, futurePrice.Price)
+		u.processData(stockInstr, futureInstr, stockPrice.Price, futurePrice.Price, pair.FutureLot)
 		return
 	}
 
-	// 3. Сохраняем цены в БД
+	var stockPrice, futurePrice float64
 	for _, p := range prices {
+		price := float64(p.Price.Units) + float64(p.Price.Nano)/1e9
 		u.db.SaveLastPrice(&models.LastPrice{
 			Figi:      p.Figi,
-			Price:     float64(p.Price.Units) + float64(p.Price.Nano)/1e9,
+			Price:     price,
 			PriceTime: p.Time.AsTime(),
 			UpdatedAt: time.Now(),
 		})
-	}
-
-	// 4. Находим цены для акции и фьючерса
-	var stockPrice, futurePrice float64
-	for _, p := range prices {
 		if p.Figi == stockInstr.Figi {
-			stockPrice = float64(p.Price.Units) + float64(p.Price.Nano)/1e9
+			stockPrice = price
 		}
 		if p.Figi == futureInstr.Figi {
-			futurePrice = float64(p.Price.Units) + float64(p.Price.Nano)/1e9
+			futurePrice = price
 		}
 	}
 
-	// 5. Обрабатываем данные
-	u.processData(stockInstr, futureInstr, stockPrice, futurePrice)
+	u.processData(stockInstr, futureInstr, stockPrice, futurePrice, pair.FutureLot)
 }
 
-// processData выполняет расчёты и выводит результат
-func (u *Updater) processData(stockInstr, futureInstr *models.Instrument, stockPrice, futurePrice float64) {
-	// Получаем дивиденд
+// processData выполняет расчёты и выводит результат в лог
+// Принимает: stockInstr - инструмент акции, futureInstr - инструмент фьючерса,
+//
+//	stockPrice - цена акции, futurePrice - цена фьючерса
+//
+// Получает дивиденды и ГО, выполняет расчёт, выводит результат
+func (u *Updater) processData(stockInstr, futureInstr *models.Instrument, stockPrice, futurePrice float64, futureLot int) {
 	div, _ := u.db.GetDividend(stockInstr.Ticker)
 	var dividend float64
 	var paymentDate *time.Time
@@ -104,21 +106,18 @@ func (u *Updater) processData(stockInstr, futureInstr *models.Instrument, stockP
 		paymentDate = &div.PaymentDate
 	}
 
-	// Получаем ГО
 	goVal, _ := u.apiService.GetFutureGO(futureInstr.Figi)
 
-	// Расчёт
 	result := u.calc.Calculate(calculator.InputData{
 		PriceStock:          stockPrice,
 		PriceFuture:         futurePrice,
-		LotFuture:           futureInstr.Lot,
+		LotFuture:           futureLot, // используем множитель из конфига, а не из API
 		Dividend:            dividend,
 		DividendPaymentDate: paymentDate,
 		ExpiryDate:          *futureInstr.ExpiryDate,
 		GO:                  goVal,
 	})
 
-	// Вывод в консоль (позже заменим на TUI)
 	log.Printf("=== %s / %s ===", stockInstr.Ticker, futureInstr.Ticker)
 	log.Printf("Акция: %.2f, Фьюч(акц): %.2f, Спред: %.2f", stockPrice, result.PriceFuturePerShare, result.Spread)
 	log.Printf("Див.чист: %.2f, Цена прод: %.2f, Дней: %d", result.DividendNet, result.SellPrice, result.DaysToExpiry)

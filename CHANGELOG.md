@@ -1,4 +1,58 @@
+# 
 # Changelog
+
+## [0.2.0] - 2026-07-04
+
+### Русский
+
+**Добавлено:**
+- Расчётный модуль со всеми формулами (спред, доходность, годовая доходность)
+- Цикл обновления цен с интервалом 1 секунда
+- Кэширование цен в БД при недоступности API
+- Получение гарантийного обеспечения (ГО) через API
+- Загрузка дивидендов при старте приложения
+- Поддержка нескольких пар в параллельных горутинах
+- Использование FIGI для стабильной идентификации инструментов
+- Поле `future_lot` в конфиге для пересчёта цены фьючерса в цену 1 акции
+- BAT-файл для запуска с переменной окружения
+
+**Исправлено:**
+- Ошибка сканирования `time.Time` в SQLite
+- Ошибка 30013 (инструмент не найден) через использование FIGI
+- Корректный пересчёт цены фьючерса с учётом лотности
+
+**Технические детали:**
+- FIGI: SBER = BBG004730N88, SRU6 = FUTSBRF09260
+- Для Сбера 1 фьючерсный контракт = 100 акций (future_lot: 100)
+- Автоматическое сохранение данных инструментов при первом запросе
+- При недоступности API используются кэшированные данные из БД
+
+---
+
+### English
+
+**Added:**
+- Calculation module with all formulas (spread, return, annual return)
+- Price update loop with 1 second interval
+- Price caching in DB when API is unavailable
+- Guarantee obligation (GO) retrieval via API
+- Dividend loading on application startup
+- Support for multiple pairs in parallel goroutines
+- FIGI usage for stable instrument identification
+- `future_lot` field in config for futures price recalculation
+- BAT file for running with environment variable
+
+**Fixed:**
+- `time.Time` scanning error in SQLite
+- Error 30013 (instrument not found) by using FIGI
+- Correct futures price recalculation considering lot size
+
+**Technical details:**
+- FIGI: SBER = BBG004730N88, SRU6 = FUTSBRF09260
+- For Sber: 1 futures contract = 100 shares (future_lot: 100)
+- Automatic instrument data saving on first request
+- Cached data from DB used when API is unavailable
+
 ## [0.1.3] - 2026-07-04
 
 ### Русский

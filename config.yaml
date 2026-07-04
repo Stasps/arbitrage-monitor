@@ -1,9 +1,9 @@
-update_interval: 1
+update_interval: 5
 commission: 0.0004
 pairs:
   - id: "sber"
     stock_ticker: "SBER"
+    stock_figi: "BBG004730N88"
     future_ticker: "SRU6"
-  # - id: "gazp"
-  #   stock_ticker: "GAZP"
-  #   future_ticker: "GZU6"
+    future_figi: "FUTSBRF09260"
+    future_lot: 100   # важно! 1 контракт = 100 акций
