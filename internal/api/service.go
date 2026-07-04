@@ -5,6 +5,8 @@ import (
 
 	"arbitrage-monitor/internal/db"
 	"arbitrage-monitor/pkg/models"
+
+	"github.com/vodolaz095/go-investAPI/investapi"
 )
 
 // Service - сервис для работы с API и БД
@@ -72,8 +74,27 @@ func (s *Service) GetOrFetchInstrument(ticker string, isFuture bool) (*models.In
 	return instr, nil
 }
 
-// GetFutureGO получает ГО для фьючерса (TODO: реализовать позже)
+// GetFutureGO получает ГО для фьючерса
 func (s *Service) GetFutureGO(figi string) (float64, error) {
-	// Временно возвращаем заглушку
+	resp, err := s.client.client.InstrumentsServiceClient.GetFuturesMargin(
+		s.client.ctx,
+		&investapi.GetFuturesMarginRequest{
+			Figi: figi,
+		},
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	// Конвертируем MoneyValue в float64
+	if resp.InitialMarginOnSell != nil {
+		return float64(resp.InitialMarginOnSell.Units) + float64(resp.InitialMarginOnSell.Nano)/1e9, nil
+	}
+
 	return 0, nil
+}
+
+// GetLastPrices получает последние цены через API клиент
+func (s *Service) GetLastPrices(figis []string) ([]*investapi.LastPrice, error) {
+	return s.client.GetLastPrices(figis)
 }

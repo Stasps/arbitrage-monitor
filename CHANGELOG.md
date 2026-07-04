@@ -1,4 +1,38 @@
 # Changelog
+## [0.1.3] - 2026-07-04
+
+### Русский
+**Добавлено:**
+- Расчётный модуль со всеми формулами (спред, доходность, годовая)
+- Цикл обновления цен с интервалом 1 секунда
+- Кэширование цен в БД при недоступности API
+- Получение гарантийного обеспечения (ГО) через API
+- Поддержка нескольких пар в параллельных горутинах
+- Автоматическая конвертация MoneyValue в float64
+
+**Технические детали:**
+- Расчёт дней до экспирации по календарю
+- Учёт дивидендов с налогом 13%
+- Комиссия 0.04% из конфига
+- При недоступности API используются кэшированные данные
+
+---
+
+### English
+**Added:**
+- Calculation module with all formulas (spread, return, annual)
+- Update loop with 1 second interval
+- Price caching in DB when API is unavailable
+- Guarantee obligation (GO) retrieval via API
+- Support for multiple pairs in parallel goroutines
+- Automatic MoneyValue to float64 conversion
+
+**Technical details:**
+- Calendar days to expiry calculation
+- Dividend accounting with 13% tax
+- 0.04% commission from config
+- Cached data used when API is unavailable
+
 ## [0.1.2] - 2026-07-04
 
 ### Русский
