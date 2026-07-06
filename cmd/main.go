@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"arbitrage-monitor/internal/api"
@@ -13,10 +14,25 @@ import (
 	"arbitrage-monitor/pkg/models"
 )
 
+// ========== КОНСТАНТЫ ==========
+const (
+	// Путь к файлу с токеном (относительно корня проекта)
+	TokenFile = "token"
+)
+
+// ========== ОСНОВНАЯ ФУНКЦИЯ ==========
+
 func main() {
-	token := os.Getenv("TINKOFF_TOKEN")
+	// Читаем токен из файла
+	token, err := readToken(TokenFile)
+	if err != nil {
+		log.Printf("Ошибка чтения токена из файла %s: %v", TokenFile, err)
+		log.Println("Пробуем использовать переменную окружения TINKOFF_TOKEN")
+		token = os.Getenv("TINKOFF_TOKEN")
+	}
+
 	if token == "" {
-		log.Fatal("Установите TINKOFF_TOKEN")
+		log.Fatal("Токен не найден. Создайте файл 'token' в корне проекта или установите переменную окружения TINKOFF_TOKEN")
 	}
 
 	cfg, err := config.LoadConfig("config.yaml")
@@ -41,12 +57,36 @@ func main() {
 	}
 	defer client.Close()
 
-	// === ЗАГРУЗКА ДИВИДЕНДОВ ===
+	apiService := api.NewService(client, database)
+	calc := calculator.NewCalculator(cfg.Commission)
+
+	// =====================================================
+	// ИНИЦИАЛИЗАЦИЯ ФЬЮЧЕРСОВ (получение FIGI через UID)
+	// =====================================================
+	log.Println("Инициализация фьючерсов (получение FIGI через UID)...")
+	for _, pair := range cfg.Pairs {
+		if pair.FutureUID != "" {
+			instr, err := apiService.GetOrFetchInstrumentByUID(pair.FutureUID)
+			if err != nil {
+				log.Printf("Ошибка инициализации фьючерса %s (UID: %s): %v", pair.FutureTicker, pair.FutureUID, err)
+			} else {
+				log.Printf("Фьючерс %s инициализирован (FIGI: %s)", instr.Ticker, instr.Figi)
+			}
+		}
+	}
+	log.Println("Инициализация фьючерсов завершена")
+
+	// Загрузка дивидендов (как было)
 	log.Println("Загрузка дивидендов...")
 	for _, pair := range cfg.Pairs {
-		// Запрашиваем дивиденды за последний год и следующий
+		stockInstr, err := apiService.GetOrFetchInstrumentByTicker(pair.StockTicker, false)
+		if err != nil {
+			log.Printf("Ошибка получения FIGI для %s: %v", pair.StockTicker, err)
+			continue
+		}
+
 		divs, err := client.GetDividends(
-			pair.StockFigi,
+			stockInstr.Figi,
 			time.Now().AddDate(-1, 0, 0),
 			time.Now().AddDate(1, 0, 0),
 		)
@@ -56,11 +96,10 @@ func main() {
 		}
 
 		for _, d := range divs {
-			// Правильные поля: DividendNet, PaymentDate, DeclaredDate
 			div := &models.Dividend{
 				Ticker:      pair.StockTicker,
 				Dividend:    float64(d.DividendNet.Units) + float64(d.DividendNet.Nano)/1e9,
-				ExDate:      d.DeclaredDate.AsTime(), // используем DeclaredDate как дату отсечки
+				ExDate:      d.DeclaredDate.AsTime(),
 				PaymentDate: d.PaymentDate.AsTime(),
 				UpdatedAt:   time.Now(),
 			}
@@ -77,9 +116,6 @@ func main() {
 	}
 	log.Println("Загрузка дивидендов завершена")
 
-	apiService := api.NewService(client, database)
-	calc := calculator.NewCalculator(cfg.Commission)
-
 	// Запускаем updater для каждой пары
 	for _, pair := range cfg.Pairs {
 		log.Printf("Запуск пары: %s (%s/%s)", pair.ID, pair.StockTicker, pair.FutureTicker)
@@ -89,4 +125,15 @@ func main() {
 
 	// Бесконечное ожидание
 	select {}
+}
+
+// ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
+
+// readToken читает токен из файла
+func readToken(filename string) (string, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
 }

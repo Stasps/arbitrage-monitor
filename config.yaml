@@ -3,7 +3,45 @@ commission: 0.0004
 pairs:
   - id: "sber"
     stock_ticker: "SBER"
-    stock_figi: "BBG004730N88"
     future_ticker: "SRU6"
-    future_figi: "FUTSBRF09260"
-    future_lot: 100   # важно! 1 контракт = 100 акций
+    future_uid: ""  # для Сбера пока оставляем тикер
+
+  - id: "x5"
+    stock_ticker: "X5"
+    future_ticker: "X5U6"
+    future_uid: "62e0f61e-df09-4b78-aaba-4f40962181a0"
+
+  - id: "vtbr"
+    stock_ticker: "VTBR"
+    future_ticker: "VBU6"
+    future_uid: "d4cf8101-c236-4415-a410-3d395cbee9eb"
+
+  - id: "rosn"
+    stock_ticker: "ROSN"
+    future_ticker: "RNU6"
+    future_uid: "3f6cfad5-35db-44c7-a7fc-d5ddd512b1b7"
+
+  - id: "mtss"
+    stock_ticker: "MTSS"
+    future_ticker: "MTU6"
+    future_uid: "a8ff2476-7df1-4681-8f2e-c8b0f6c589e0"
+
+  - id: "moex"
+    stock_ticker: "MOEX"
+    future_ticker: "MEU6"
+    future_uid: "96acfab1-e3ef-4af1-b654-0026d02c3844"
+
+  - id: "mdmg"
+    stock_ticker: "MDMG"
+    future_ticker: "MDU6"
+    future_uid: "ee0533ca-4d94-4f4b-a74b-20d382506438"
+
+  - id: "domrf"
+    stock_ticker: "DOMRF"
+    future_ticker: "DRU6"
+    future_uid: "ad0fc6b2-c116-40b5-85aa-174574339c21"
+
+  - id: "bane"
+    stock_ticker: "BANE"
+    future_ticker: "BNU6"
+    future_uid: "4f37f16d-5c8c-4c63-861c-465fc52ee403"

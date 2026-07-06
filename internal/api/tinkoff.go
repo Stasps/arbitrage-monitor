@@ -51,54 +51,6 @@ func (c *TinkoffClient) GetShareInfoByTicker(ticker string) (*investapi.Share, e
 	return resp.Instrument, nil
 }
 
-// GetFutureInfoByTicker получает информацию о фьючерсе по тикеру
-// Принимает: ticker - биржевой тикер фьючерса (например, "SRU6")
-// Возвращает: *investapi.Future - информация о фьючерсе, error - ошибка при запросе
-func (c *TinkoffClient) GetFutureInfoByTicker(ticker string) (*investapi.Future, error) {
-	resp, err := c.client.InstrumentsServiceClient.FutureBy(c.ctx,
-		&investapi.InstrumentRequest{
-			IdType: investapi.InstrumentIdType_INSTRUMENT_ID_TYPE_TICKER,
-			Id:     ticker,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-	return resp.Instrument, nil
-}
-
-// GetShareInfoByFigi получает информацию об акции по FIGI идентификатору
-// Принимает: figi - FIGI идентификатор акции (например, "BBG004730N88")
-// Возвращает: *investapi.Share - информация об акции, error - ошибка при запросе
-func (c *TinkoffClient) GetShareInfoByFigi(figi string) (*investapi.Share, error) {
-	resp, err := c.client.InstrumentsServiceClient.ShareBy(c.ctx,
-		&investapi.InstrumentRequest{
-			IdType: investapi.InstrumentIdType_INSTRUMENT_ID_TYPE_FIGI,
-			Id:     figi,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-	return resp.Instrument, nil
-}
-
-// GetFutureInfoByFigi получает информацию о фьючерсе по FIGI идентификатору
-// Принимает: figi - FIGI идентификатор фьючерса (например, "FUTSBRF09260")
-// Возвращает: *investapi.Future - информация о фьючерсе, error - ошибка при запросе
-func (c *TinkoffClient) GetFutureInfoByFigi(figi string) (*investapi.Future, error) {
-	resp, err := c.client.InstrumentsServiceClient.FutureBy(c.ctx,
-		&investapi.InstrumentRequest{
-			IdType: investapi.InstrumentIdType_INSTRUMENT_ID_TYPE_FIGI,
-			Id:     figi,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-	return resp.Instrument, nil
-}
-
 // GetDividends получает список дивидендов по акции за указанный период
 // Принимает: figi - FIGI идентификатор акции, from - начальная дата, to - конечная дата
 // Возвращает: []*investapi.Dividend - список дивидендов, error - ошибка при запросе
@@ -131,6 +83,23 @@ func (c *TinkoffClient) GetLastPrices(figis []string) ([]*investapi.LastPrice, e
 	return resp.LastPrices, nil
 }
 
+// GetFutureInfoByUID получает информацию о фьючерсе по уникальному идентификатору (UID)
+// Принимает: uid - уникальный идентификатор фьючерса в системе Т-Инвестиций
+// Возвращает: *investapi.Future - информация о фьючерсе, error - ошибка при запросе
+// Использование UID предпочтительнее FIGI, так как UID стабилен и не меняется
+func (c *TinkoffClient) GetFutureInfoByUID(uid string) (*investapi.Future, error) {
+	resp, err := c.client.InstrumentsServiceClient.FutureBy(c.ctx,
+		&investapi.InstrumentRequest{
+			IdType: investapi.InstrumentIdType_INSTRUMENT_ID_TYPE_UID,
+			Id:     uid,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Instrument, nil
+}
+
 // GetFutureGO получает гарантийное обеспечение для фьючерса по FIGI
 // Принимает: figi - FIGI идентификатор фьючерса
 // Возвращает: float64 - ГО на один контракт в рублях, error - ошибка при запросе
@@ -147,4 +116,28 @@ func (c *TinkoffClient) GetFutureGO(figi string) (float64, error) {
 		return float64(resp.InitialMarginOnSell.Units) + float64(resp.InitialMarginOnSell.Nano)/1e9, nil
 	}
 	return 0, nil
+}
+
+// GetInstrumentByUID получает информацию об инструменте по UID
+// Принимает: uid - уникальный идентификатор инструмента
+// Возвращает: *investapi.Instrument - полная информация об инструменте (включая FIGI)
+// Используется для получения FIGI для фьючерсов, которые не возвращают его через FutureBy
+func (c *TinkoffClient) GetInstrumentByUID(uid string) (*investapi.Instrument, error) {
+	resp, err := c.client.InstrumentsServiceClient.GetInstrumentBy(c.ctx,
+		&investapi.InstrumentRequest{
+			IdType: investapi.InstrumentIdType_INSTRUMENT_ID_TYPE_UID,
+			Id:     uid,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Instrument, nil
+}
+
+// GetInstrumentsServiceClient возвращает клиент для работы с инструментами
+// Используется для поиска инструментов, получения списков и справочной информации
+// Возвращает: investapi.InstrumentsServiceClient - gRPC клиент для сервиса инструментов
+func (c *TinkoffClient) GetInstrumentsServiceClient() investapi.InstrumentsServiceClient {
+	return c.client.InstrumentsServiceClient
 }

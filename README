@@ -1,160 +1,54 @@
-___
 # Arbitrage Monitor
 
-Мониторинг арбитражных возможностей между акциями и фьючерсами на Московской бирже через API Т-Инвестиций.
+Мониторинг арбитражных возможностей между акциями и фьючерсами (API Т-Инвестиций).
 
-## Возможности
+## Установка и запуск
 
-- ✅ Отображение текущих котировок акций и фьючерсов
-- ✅ Расчёт спреда между акцией и фьючерсом
-- ✅ Расчёт доходности с учётом:
-  - Дивидендов (очищенных от налога 13%)
-  - Комиссии за сделку (настраиваемая)
-  - Гарантийного обеспечения (ГО)
-- ✅ Обновление цен в реальном времени (1 секунда)
-- ✅ Кэширование данных в SQLite
-- ✅ Поддержка нескольких пар акция-фьючерс
-- ✅ Запуск через EXE с переменными окружения
-- ✅ Логирование в консоль
+1. Получите токен в Т-Инвестициях (раздел «Настройки → Токены»).  
+   Сохраните его в файл `token` в корневой папке проекта.
 
-## Установка
+2. Настройте пары в `config.yaml` (пример ниже).
 
-### 1. Клонирование репозитория
+3. Запустите основную программу:
 
-```
-git clone https://github.com/Stasps/arbitrage-monitor.git
-cd arbitrage-monitor
-```
+       arbitrage-monitor.exe
 
-### 2. Установка зависимостей
+   Для обновления множителей (количество акций в фьючерсном контракте) и ГО периодически запускайте:
 
-```
-go mod download
-```
+       f/update_futures.exe
 
-### 3. Настройка конфига
+## Конфигурация (config.yaml)
 
-Отредактируйте `config.yaml`:
+    update_interval: 5          # интервал обновления в секундах
+    commission: 0.0004          # комиссия (0.04%)
+    pairs:
+      - id: "sber"
+        stock_ticker: "SBER"
+        future_ticker: "SRU6"
+        future_uid: "f532beef-65bb-4a42-894c-e9bc728f93c4"
 
-```
-update_interval: 1                # интервал обновления в секундах
-commission: 0.0004                # комиссия 0.04%
-pairs:
-  - id: "sber"                    # идентификатор пары
-    stock_ticker: "SBER"          # тикер акции
-    stock_figi: "BBG004730N88"    # FIGI акции
-    future_ticker: "SRU6"         # тикер фьючерса
-    future_figi: "FUTSBRF09260"   # FIGI фьючерса
-    future_lot: 100               # сколько акций в 1 контракте
-```
+Обязательно укажите `future_uid` (UID фьючерса). Узнать UID можно через утилиту `f/finder.exe`.
 
-**Важно:** Для каждой пары укажите правильный `future_lot`:
-- Сбербанк (SBER) → 100
-- Газпром (GAZP) → 100
-- Другие уточняйте в спецификации контракта
+## Утилиты
 
-### 4. Получение токена Т-Инвестиций
+* `f/finder.exe` — поиск инструментов по запросу.  
+  Выводит UID, FIGI, дату экспирации и множитель.
 
-1. Перейдите в [Т-Инвестиции](https://www.tinkoff.ru/invest/)
-2. Откройте раздел **Настройки → Токены**
-3. Создайте новый токен с правами:
-   - `MarketData` (чтение котировок)
-   - `Instruments` (чтение инструментов)
-4. Скопируйте токен (начинается с `t.`)
+* `f/update_futures.exe` — автоматическое обновление для всех фьючерсов:  
+  - множитель (basic_asset_size)  
+  - ГО (guarantee obligation)  
+  - дата экспирации
 
-### 5. Запуск
+Запускайте `update_futures.exe` после добавления новых пар или при изменении биржевых параметров.
 
-#### Через Go (для разработки):
+## Текущие возможности
 
-```
-TINKOFF_TOKEN=t.ваш_токен go run cmd/main.go
-```
+* Получение цен в реальном времени (интервал настраивается).  
+* Расчёт спреда, доходности, годовой доходности.  
+* Кэширование данных в SQLite (`arbitrage.db`).  
+* Использование UID (FIGI не применяется, так как он устарел).  
 
-#### Через EXE (готовый бинарник):
+## Планы
 
-1. Скомпилируйте:
-```
-go build -o arbitrage-monitor.exe cmd/main.go
-```
-
-2. Создайте `run.bat` в корне проекта:
-
-```
-@echo off
-set TINKOFF_TOKEN=t.ваш_токен
-title Arbitrage Monitor
-arbitrage-monitor.exe
-pause
-```
-
-3. Запустите `run.bat`
-
-#### Через EXE с логами в файл:
-
-```
-@echo off
-set TINKOFF_TOKEN=t.ваш_токен
-arbitrage-monitor.exe > log.txt 2>&1
-pause
-```
-
-### 6. База данных
-
-При первом запуске создаётся `arbitrage.db` с таблицами:
-- `instruments` — кэш инструментов
-- `dividends` — кэш дивидендов
-- `last_prices` — кэш последних цен
-
-**Для ручного изменения лотности фьючерса:**
-
-```
-sqlite3 arbitrage.db
-UPDATE instruments SET lot = 100 WHERE ticker = 'SRU6';
-.quit
-```
-
-## Структура проекта
-
-```
-arbitrage-monitor/
-├── cmd/
-│   └── main.go                 # Точка входа
-├── internal/
-│   ├── config/                 # Загрузка конфига
-│   ├── db/                     # SQLite слой
-│   ├── api/                    # Клиент Т-Инвестиций
-│   ├── calculator/             # Расчётный модуль
-│   └── updater/                # Цикл обновления
-├── pkg/models/                 # Модели данных
-├── config.yaml                 # Конфигурация
-├── run.bat                     # Запуск с токеном
-├── go.mod
-└── README.md
-```
-
-## Пример вывода
-
-```
-2026/07/04 09:13:33 === SBER / SRU6 ===
-2026/07/04 09:13:33 Акция: 301.19, Фьюч(акц): 276.73, Спред: -24.46
-2026/07/04 09:13:33 Див.чист: 45.00, Цена прод: 321.73, Дней: 76
-2026/07/04 09:13:33 Доходность: 5.12%, Годовая: 24.59%
-2026/07/04 09:13:33 ГО/акц: 5708.88, Инвест: 6010.07
-```
-
-## Формулы расчёта
-
-```
-priceFuturePerShare = priceFuture / future_lot
-spread = priceFuturePerShare - priceStock
-dividendNet = dividend * 0.87 (если paymentDate <= expiryDate)
-sellPrice = priceFuturePerShare + dividendNet
-daysToExpiry = (expiryDate - today).days (календарные)
-goPerShare = goFuture / future_lot
-investedCapital = priceStock + goPerShare
-commissionTotal = commission * (priceStock + priceFuturePerShare)
-tradeProfit = sellPrice - priceStock - commissionTotal
-returnPct = tradeProfit / investedCapital
-annualReturnPct = returnPct / daysToExpiry * 365
-```
-___
+* Веб-интерфейс с настраиваемыми таблицами (фильтры, скрытие колонок).  
+* Автоматическое обновление множителей и ГО по расписанию.  

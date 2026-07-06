@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"sync"
 	"time"
 
 	"arbitrage-monitor/pkg/models"
@@ -11,7 +12,8 @@ import (
 
 // DB структура для работы с базой данных
 type DB struct {
-	conn *sql.DB
+	conn  *sql.DB
+	mutex sync.Mutex
 }
 
 // NewDB создает новое подключение к БД и выполняет миграции
@@ -34,12 +36,13 @@ func (db *DB) Close() error {
 	return db.conn.Close()
 }
 
-// migrate создает необходимые таблицы
+// migrate создает необходимые таблицы и выполняет миграции
 func (db *DB) migrate() error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS instruments (
 			ticker TEXT PRIMARY KEY,
-			figi TEXT NOT NULL,
+			figi TEXT,
+			uid TEXT,
 			instrument_type TEXT NOT NULL,
 			lot INTEGER NOT NULL,
 			expiry_date TEXT,
@@ -70,24 +73,42 @@ func (db *DB) migrate() error {
 		}
 	}
 
+	// Проверяем, существует ли колонка uid
+	var count int
+	err := db.conn.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('instruments') WHERE name = 'uid';`).Scan(&count)
+	if err != nil {
+		return err
+	}
+
+	// Если колонки нет — добавляем
+	if count == 0 {
+		_, err := db.conn.Exec(`ALTER TABLE instruments ADD COLUMN uid TEXT;`)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 // GetInstrument получает инструмент из БД по тикеру
-// Принимает: ticker - биржевой тикер
-// Возвращает: *models.Instrument - данные инструмента, nil если не найден, error - ошибка запроса
 func (db *DB) GetInstrument(ticker string) (*models.Instrument, error) {
-	query := `SELECT ticker, figi, instrument_type, lot, expiry_date, go, updated_at
+	db.mutex.Lock()
+	defer db.mutex.Unlock()
+
+	query := `SELECT ticker, figi, uid, instrument_type, lot, expiry_date, go, updated_at
 		FROM instruments WHERE ticker = ?`
 
 	var instr models.Instrument
 	var expiryDate sql.NullString
 	var goVal sql.NullFloat64
+	var uid sql.NullString
 	var updatedAt string
 
 	err := db.conn.QueryRow(query, ticker).Scan(
 		&instr.Ticker,
 		&instr.Figi,
+		&uid,
 		&instr.Type,
 		&instr.Lot,
 		&expiryDate,
@@ -101,6 +122,9 @@ func (db *DB) GetInstrument(ticker string) (*models.Instrument, error) {
 		return nil, err
 	}
 
+	if uid.Valid {
+		instr.UID = uid.String
+	}
 	if expiryDate.Valid {
 		t, _ := time.Parse(time.RFC3339, expiryDate.String)
 		instr.ExpiryDate = &t
@@ -108,27 +132,28 @@ func (db *DB) GetInstrument(ticker string) (*models.Instrument, error) {
 	if goVal.Valid {
 		instr.GO = &goVal.Float64
 	}
-	// Парсим updatedAt
 	instr.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 
 	return &instr, nil
 }
 
-// GetInstrumentByFigi получает инструмент из БД по FIGI идентификатору
-// Принимает: figi - FIGI идентификатор
-// Возвращает: *models.Instrument - данные инструмента, nil если не найден, error - ошибка запроса
-func (db *DB) GetInstrumentByFigi(figi string) (*models.Instrument, error) {
-	query := `SELECT ticker, figi, instrument_type, lot, expiry_date, go, updated_at
-		FROM instruments WHERE figi = ?`
+// GetInstrumentByUID получает инструмент из БД по UID
+func (db *DB) GetInstrumentByUID(uid string) (*models.Instrument, error) {
+	db.mutex.Lock()
+	defer db.mutex.Unlock()
+
+	query := `SELECT ticker, figi, uid, instrument_type, lot, expiry_date, go, updated_at
+		FROM instruments WHERE uid = ?`
 
 	var instr models.Instrument
 	var expiryDate sql.NullString
 	var goVal sql.NullFloat64
 	var updatedAt string
 
-	err := db.conn.QueryRow(query, figi).Scan(
+	err := db.conn.QueryRow(query, uid).Scan(
 		&instr.Ticker,
 		&instr.Figi,
+		&instr.UID,
 		&instr.Type,
 		&instr.Lot,
 		&expiryDate,
@@ -149,19 +174,19 @@ func (db *DB) GetInstrumentByFigi(figi string) (*models.Instrument, error) {
 	if goVal.Valid {
 		instr.GO = &goVal.Float64
 	}
-	// Парсим updatedAt
 	instr.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 
 	return &instr, nil
 }
 
 // SaveInstrument сохраняет или обновляет данные инструмента в БД
-// Принимает: instr - данные инструмента
-// Возвращает: error - ошибка при сохранении
 func (db *DB) SaveInstrument(instr *models.Instrument) error {
+	db.mutex.Lock()
+	defer db.mutex.Unlock()
+
 	query := `INSERT OR REPLACE INTO instruments 
-		(ticker, figi, instrument_type, lot, expiry_date, go, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`
+		(ticker, figi, uid, instrument_type, lot, expiry_date, go, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 
 	var expiryDate interface{}
 	if instr.ExpiryDate != nil {
@@ -180,6 +205,7 @@ func (db *DB) SaveInstrument(instr *models.Instrument) error {
 	_, err := db.conn.Exec(query,
 		instr.Ticker,
 		instr.Figi,
+		instr.UID,
 		instr.Type,
 		instr.Lot,
 		expiryDate,
@@ -190,9 +216,10 @@ func (db *DB) SaveInstrument(instr *models.Instrument) error {
 }
 
 // SaveDividend сохраняет или обновляет данные о дивиденде в БД
-// Принимает: dividend - данные о дивиденде
-// Возвращает: error - ошибка при сохранении
 func (db *DB) SaveDividend(dividend *models.Dividend) error {
+	db.mutex.Lock()
+	defer db.mutex.Unlock()
+
 	query := `INSERT OR REPLACE INTO dividends 
 		(ticker, dividend, ex_date, payment_date, updated_at)
 		VALUES (?, ?, ?, ?, ?)`
@@ -208,9 +235,10 @@ func (db *DB) SaveDividend(dividend *models.Dividend) error {
 }
 
 // GetDividend получает ближайший дивиденд по акции (дата выплаты >= сегодня)
-// Принимает: ticker - тикер акции
-// Возвращает: *models.Dividend - данные дивиденда, nil если не найден, error - ошибка запроса
 func (db *DB) GetDividend(ticker string) (*models.Dividend, error) {
+	db.mutex.Lock()
+	defer db.mutex.Unlock()
+
 	query := `SELECT ticker, dividend, ex_date, payment_date, updated_at
 		FROM dividends 
 		WHERE ticker = ? AND payment_date >= datetime('now')
@@ -241,9 +269,10 @@ func (db *DB) GetDividend(ticker string) (*models.Dividend, error) {
 }
 
 // SaveLastPrice сохраняет или обновляет последнюю цену в БД
-// Принимает: price - данные о последней цене
-// Возвращает: error - ошибка при сохранении
 func (db *DB) SaveLastPrice(price *models.LastPrice) error {
+	db.mutex.Lock()
+	defer db.mutex.Unlock()
+
 	query := `INSERT OR REPLACE INTO last_prices 
 		(figi, price, price_time, updated_at)
 		VALUES (?, ?, ?, ?)`
@@ -258,9 +287,10 @@ func (db *DB) SaveLastPrice(price *models.LastPrice) error {
 }
 
 // GetLastPrice получает последнюю цену из БД по FIGI идентификатору
-// Принимает: figi - FIGI идентификатор
-// Возвращает: *models.LastPrice - данные о цене, nil если не найден, error - ошибка запроса
 func (db *DB) GetLastPrice(figi string) (*models.LastPrice, error) {
+	db.mutex.Lock()
+	defer db.mutex.Unlock()
+
 	query := `SELECT figi, price, price_time, updated_at
 		FROM last_prices WHERE figi = ?`
 
