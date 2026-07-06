@@ -4,7 +4,7 @@ pairs:
   - id: "sber"
     stock_ticker: "SBER"
     future_ticker: "SRU6"
-    future_uid: ""  # для Сбера пока оставляем тикер
+    future_uid: "f532beef-65bb-4a42-894c-e9bc728f93c4"
 
   - id: "x5"
     stock_ticker: "X5"

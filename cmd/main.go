@@ -11,6 +11,7 @@ import (
 	"arbitrage-monitor/internal/config"
 	"arbitrage-monitor/internal/db"
 	"arbitrage-monitor/internal/updater"
+	"arbitrage-monitor/internal/webserver"
 	"arbitrage-monitor/pkg/models"
 )
 
@@ -59,6 +60,14 @@ func main() {
 
 	apiService := api.NewService(client, database)
 	calc := calculator.NewCalculator(cfg.Commission)
+
+	// === ЗАПУСК ВЕБ-СЕРВЕРА ===
+	srv := webserver.NewServer()
+	go func() {
+		if err := srv.Run(":8080"); err != nil {
+			log.Printf("Ошибка веб-сервера: %v", err)
+		}
+	}()
 
 	// =====================================================
 	// ИНИЦИАЛИЗАЦИЯ ФЬЮЧЕРСОВ (получение FIGI через UID)
@@ -119,7 +128,7 @@ func main() {
 	// Запускаем updater для каждой пары
 	for _, pair := range cfg.Pairs {
 		log.Printf("Запуск пары: %s (%s/%s)", pair.ID, pair.StockTicker, pair.FutureTicker)
-		u := updater.NewUpdater(apiService, database, calc, cfg.UpdateInterval)
+		u := updater.NewUpdater(apiService, database, calc, cfg.UpdateInterval, srv) // <-- добавлен srv
 		go u.Start(pair)
 	}
 

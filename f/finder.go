@@ -18,11 +18,11 @@ import (
 
 const (
 	// Queries - запрос для поиска (можно указать несколько через пробел)
-	Queries = "VTB"
+	Queries = "Корпоративный Центр Икс"
 
 	// InstrumentFilter - фильтр по типу инструмента
 	// Возможные значения: "share", "bond", "etf", "futures", "currency", "option"
-	InstrumentFilter = "futures"
+	InstrumentFilter = "share"
 
 	// ExpiryFilter - фильтр по дате экспирации (только для фьючерсов)
 	// Возможные значения:

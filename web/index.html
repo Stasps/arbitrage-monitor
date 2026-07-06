@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Арбитражный монитор</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #1e1e2f; color: #cdd6f4; margin: 20px; }
+        h1 { text-align: center; color: #89b4fa; }
+        #status { text-align: center; margin-bottom: 20px; font-size: 14px; color: #a6adc8; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th { background: #313244; color: #cdd6f4; padding: 10px; text-align: right; }
+        td { padding: 8px 10px; text-align: right; border-bottom: 1px solid #313244; }
+        .positive { color: #a6e3a1; }
+        .negative { color: #f38ba8; }
+        .pair { text-align: left; font-weight: bold; color: #89b4fa; }
+        .header-left { text-align: left; }
+        .last-update { color: #a6adc8; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <h1>📊 Арбитражный монитор</h1>
+    <div id="status">⏳ Ожидание данных...</div>
+    <table id="data-table">
+        <thead>
+            <tr>
+                <th class="header-left">Пара</th>
+                <th>Акция</th>
+                <th>Фьюч(акц)</th>
+                <th>Спред</th>
+                <th>Див.чист</th>
+                <th>Цена прод</th>
+                <th>Дней</th>
+                <th>Доходность</th>
+                <th>Годовая</th>
+                <th>ГО/акц</th>
+            </tr>
+        </thead>
+        <tbody id="table-body">
+            <tr><td colspan="10" style="text-align:center;">Нет данных</td></tr>
+        </tbody>
+    </table>
+
+    <script>
+        const ws = new WebSocket('ws://' + window.location.host + '/ws');
+        const tbody = document.getElementById('table-body');
+        const statusDiv = document.getElementById('status');
+
+        ws.onopen = function() {
+            statusDiv.textContent = '✅ Подключено к серверу';
+        };
+
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (!Array.isArray(data)) return;
+
+            let html = '';
+            data.forEach(row => {
+                const spreadClass = row.Spread >= 0 ? 'positive' : 'negative';
+                const returnClass = row.ReturnPct >= 0 ? 'positive' : 'negative';
+                html += '<tr>';
+                html += '<td class="pair">' + row.PairID + '</td>';
+                html += '<td>' + row.PriceStock.toFixed(2) + '</td>';
+                html += '<td>' + row.PriceFuturePerShare.toFixed(2) + '</td>';
+                html += '<td class="' + spreadClass + '">' + row.Spread.toFixed(2) + '</td>';
+                html += '<td>' + (row.DividendNet ? row.DividendNet.toFixed(2) : '-') + '</td>';
+                html += '<td>' + row.SellPrice.toFixed(2) + '</td>';
+                html += '<td>' + row.DaysToExpiry + '</td>';
+                html += '<td class="' + returnClass + '">' + (row.ReturnPct * 100).toFixed(2) + '%</td>';
+                html += '<td class="' + returnClass + '">' + (row.AnnualReturnPct * 100).toFixed(2) + '%</td>';
+                html += '<td>' + row.GOPerShare.toFixed(2) + '</td>';
+                html += '</tr>';
+            });
+            tbody.innerHTML = html;
+            statusDiv.textContent = '🔄 Обновлено: ' + new Date().toLocaleTimeString();
+        };
+
+        ws.onclose = function() {
+            statusDiv.textContent = '❌ Соединение потеряно. Перезагрузите страницу.';
+        };
+    </script>
+</body>
+</html>
