@@ -45,3 +45,14 @@ pairs:
     stock_ticker: "BANE"
     future_ticker: "BNU6"
     future_uid: "4f37f16d-5c8c-4c63-861c-465fc52ee403"
+
+  - id: "mtss"
+    stock_ticker: "MTSS"
+    future_ticker: "MTU6"
+    future_uid: "a8ff2476-7df1-4681-8f2e-c8b0f6c589e0"
+
+  - id: "plzl"
+    stock_ticker: "PLZL"
+    future_ticker: "PXU6"
+    future_uid: "9bf88457-5382-4949-b8a7-36b98c9312e8"
+   

@@ -234,14 +234,16 @@ func (db *DB) SaveDividend(dividend *models.Dividend) error {
 	return err
 }
 
-// GetDividend получает ближайший дивиденд по акции (дата выплаты >= сегодня)
+// GetDividend получает ближайший дивиденд по акции (дата выплаты >= сегодня И дата отсечки >= сегодня)
+// Принимает: ticker - тикер акции
+// Возвращает: *models.Dividend - данные дивиденда, nil если не найден, error - ошибка запроса
 func (db *DB) GetDividend(ticker string) (*models.Dividend, error) {
 	db.mutex.Lock()
 	defer db.mutex.Unlock()
 
 	query := `SELECT ticker, dividend, ex_date, payment_date, updated_at
 		FROM dividends 
-		WHERE ticker = ? AND payment_date >= datetime('now')
+		WHERE ticker = ? AND payment_date >= datetime('now') AND ex_date >= datetime('now')
 		ORDER BY payment_date ASC LIMIT 1`
 
 	var div models.Dividend

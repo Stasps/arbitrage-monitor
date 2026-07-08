@@ -108,7 +108,7 @@ func main() {
 			div := &models.Dividend{
 				Ticker:      pair.StockTicker,
 				Dividend:    float64(d.DividendNet.Units) + float64(d.DividendNet.Nano)/1e9,
-				ExDate:      d.DeclaredDate.AsTime(),
+				ExDate:      d.LastBuyDate.AsTime(),
 				PaymentDate: d.PaymentDate.AsTime(),
 				UpdatedAt:   time.Now(),
 			}

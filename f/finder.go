@@ -18,7 +18,7 @@ import (
 
 const (
 	// Queries - запрос для поиска (можно указать несколько через пробел)
-	Queries = "Корпоративный Центр Икс"
+	Queries = "PLZL"
 
 	// InstrumentFilter - фильтр по типу инструмента
 	// Возможные значения: "share", "bond", "etf", "futures", "currency", "option"
@@ -152,6 +152,18 @@ func runSearchAndSave(token string, logPath string) error {
 			log.Printf("    [%d] ТИКЕР: %s, ИМЯ: %s, ТИП: %s, UID: %s",
 				i+1, inst.Ticker, inst.Name, inst.InstrumentType, inst.Uid)
 
+			// Для акций запрашиваем цену
+			if inst.InstrumentType == "share" && inst.Figi != "" {
+				price, err := getPrice(client, inst.Figi)
+				if err != nil {
+					log.Printf("      Ошибка получения цены: %v", err)
+				} else if price > 0 {
+					log.Printf("      FIGI: %s, ЦЕНА: %.2f", inst.Figi, price)
+				} else {
+					log.Printf("      FIGI: %s, ЦЕНА: нет данных", inst.Figi)
+				}
+			}
+
 			if inst.InstrumentType == "futures" {
 				figi, expiry, err := getFutureDetails(client, inst.Uid)
 				if err != nil {
@@ -243,6 +255,23 @@ func isDigit(s string) bool {
 		}
 	}
 	return true
+}
+
+func getPrice(client *investapi.Client, figi string) (float64, error) {
+	ctx := context.Background()
+	resp, err := client.MarketDataServiceClient.GetLastPrices(ctx,
+		&investapi.GetLastPricesRequest{
+			Figi: []string{figi},
+		},
+	)
+	if err != nil {
+		return 0, err
+	}
+	if len(resp.LastPrices) == 0 || resp.LastPrices[0].Price == nil {
+		return 0, nil
+	}
+	p := resp.LastPrices[0]
+	return float64(p.Price.Units) + float64(p.Price.Nano)/1e9, nil
 }
 
 func filterInstruments(instruments []*investapi.InstrumentShort, filterType string) []*investapi.InstrumentShort {
