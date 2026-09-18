@@ -14,6 +14,7 @@ type Pair struct {
 type Config struct {
 	UpdateInterval int     `yaml:"update_interval"`
 	Commission     float64 `yaml:"commission"`
+	Port           int     `yaml:"port"`
 	Pairs          []Pair  `yaml:"pairs"`
 }
 

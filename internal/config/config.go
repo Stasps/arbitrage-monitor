@@ -28,5 +28,10 @@ func LoadConfig(path string) (*models.Config, error) {
 		return nil, err
 	}
 
+	// Устанавливаем значение по умолчанию для порта, если он не указан или равен 0
+	if cfg.Port == 0 {
+		cfg.Port = 8080
+	}
+
 	return &cfg, nil
 }

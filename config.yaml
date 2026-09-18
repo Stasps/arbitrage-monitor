@@ -1,5 +1,6 @@
 update_interval: 5
 commission: 0.0004
+port: 8080
 pairs:
   - id: "sber"
     stock_ticker: "SBER"

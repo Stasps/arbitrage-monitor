@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,7 +65,7 @@ func main() {
 	// === ЗАПУСК ВЕБ-СЕРВЕРА ===
 	srv := webserver.NewServer()
 	go func() {
-		if err := srv.Run(":8080"); err != nil {
+		if err := srv.Run(":" + strconv.Itoa(cfg.Port)); err != nil {
 			log.Printf("Ошибка веб-сервера: %v", err)
 		}
 	}()

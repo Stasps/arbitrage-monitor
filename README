@@ -21,6 +21,7 @@
 
     update_interval: 5          # интервал обновления в секундах
     commission: 0.0004          # комиссия (0.04%)
+    port: 8080                  # порт веб-сервера (по умолчанию 8080)
     pairs:
       - id: "sber"
         stock_ticker: "SBER"
