@@ -1,5 +1,6 @@
 update_interval: 5
-commission: 0.0004
+commission_stock: 0.0004
+commission_future: 0.00025
 port: 8080
 pairs:
   - id: "sber"

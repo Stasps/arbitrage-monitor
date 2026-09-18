@@ -7,7 +7,8 @@ import (
 
 // Calculator - структура для расчётов
 type Calculator struct {
-	Commission float64
+	CommissionStock  float64
+	CommissionFuture float64
 }
 
 // InputData - входные данные для расчёта
@@ -37,9 +38,10 @@ type Result struct {
 }
 
 // NewCalculator создаёт новый калькулятор
-func NewCalculator(commission float64) *Calculator {
+func NewCalculator(commissionStock, commissionFuture float64) *Calculator {
 	return &Calculator{
-		Commission: commission,
+		CommissionStock:  commissionStock,
+		CommissionFuture: commissionFuture,
 	}
 }
 
@@ -74,8 +76,8 @@ func (c *Calculator) Calculate(data InputData) Result {
 	// 7. Инвестированный капитал
 	investedCapital := data.PriceStock + goPerShare
 
-	// 8. Комиссия
-	commissionTotal := c.Commission * (data.PriceStock + priceFuturePerShare)
+	// 8. Комиссия (раздельная)
+	commissionTotal := c.CommissionStock*data.PriceStock + c.CommissionFuture*priceFuturePerShare
 
 	// 9. Прибыль
 	tradeProfit := sellPrice - data.PriceStock - commissionTotal

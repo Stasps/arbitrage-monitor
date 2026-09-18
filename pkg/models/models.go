@@ -12,10 +12,11 @@ type Pair struct {
 
 // Config хранит глобальную конфигурацию приложения
 type Config struct {
-	UpdateInterval int     `yaml:"update_interval"`
-	Commission     float64 `yaml:"commission"`
-	Port           int     `yaml:"port"`
-	Pairs          []Pair  `yaml:"pairs"`
+	UpdateInterval   int     `yaml:"update_interval"`
+	CommissionStock  float64 `yaml:"commission_stock"`
+	CommissionFuture float64 `yaml:"commission_future"`
+	Port             int     `yaml:"port"`
+	Pairs            []Pair  `yaml:"pairs"`
 }
 
 // Instrument хранит метаданные инструмента

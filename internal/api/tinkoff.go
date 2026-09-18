@@ -83,6 +83,21 @@ func (c *TinkoffClient) GetLastPrices(figis []string) ([]*investapi.LastPrice, e
 	return resp.LastPrices, nil
 }
 
+// GetOrderBook получает стакан по FIGI идентификатору
+// Принимает: figi - FIGI идентификатор инструмента
+// Возвращает: *investapi.GetOrderBookResponse - ответ API с стаканом, error - ошибка при запросе
+func (c *TinkoffClient) GetOrderBook(figi string) (*investapi.GetOrderBookResponse, error) {
+	resp, err := c.client.MarketDataServiceClient.GetOrderBook(c.ctx,
+		&investapi.GetOrderBookRequest{
+			Figi: &figi,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 // GetFutureInfoByUID получает информацию о фьючерсе по уникальному идентификатору (UID)
 // Принимает: uid - уникальный идентификатор фьючерса в системе Т-Инвестиций
 // Возвращает: *investapi.Future - информация о фьючерсе, error - ошибка при запросе

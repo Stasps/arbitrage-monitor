@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -176,4 +177,81 @@ func (s *Service) GetFutureGO(figi string) (float64, error) {
 // Возвращает: []*investapi.LastPrice - список последних цен, error - ошибка при запросе
 func (s *Service) GetLastPrices(figis []string) ([]*investapi.LastPrice, error) {
 	return s.client.GetLastPrices(figis)
+}
+
+// GetBestPrices получает лучшие цены для акции и фьючерса
+// Принимает: stockFigi - FIGI идентификатор акции, futureFigi - FIGI идентификатор фьючерса
+// Возвращает: stockPrice - цена акции, futurePrice - цена фьючерса на одну акцию,
+//
+//	source - источник цены ("orderbook" или "lastprice"), error - ошибка при запросе
+func (s *Service) GetBestPrices(stockFigi, futureFigi string) (stockPrice, futurePrice float64, source string, err error) {
+	// Получаем стаканы для обоих инструментов
+	stockOrderBook, err := s.client.GetOrderBook(stockFigi)
+	if err != nil {
+		log.Printf("Ошибка получения стакана для акции %s: %v", stockFigi, err)
+		// Fallback на GetLastPrices
+		return s.getLastPricesFallback(stockFigi, futureFigi)
+	}
+
+	futureOrderBook, err := s.client.GetOrderBook(futureFigi)
+	if err != nil {
+		log.Printf("Ошибка получения стакана для фьючерса %s: %v", futureFigi, err)
+		// Fallback на GetLastPrices
+		return s.getLastPricesFallback(stockFigi, futureFigi)
+	}
+
+	// Проверяем наличие asks в стакане акции
+	if len(stockOrderBook.Bids) == 0 {
+		log.Printf("Предупреждение: стакан акции %s пуст (нет bids), используем GetLastPrices", stockFigi)
+		return s.getLastPricesFallback(stockFigi, futureFigi)
+	}
+
+	// Проверяем наличие bids в стакане фьючерса
+	if len(futureOrderBook.Asks) == 0 {
+		log.Printf("Предупреждение: стакан фьючерса %s пуст (нет asks), используем GetLastPrices", futureFigi)
+		return s.getLastPricesFallback(stockFigi, futureFigi)
+	}
+
+	// Вычисляем цену акции из asks[0].Price (лучшая цена продажи)
+	stockPrice = float64(stockOrderBook.Bids[0].Price.Units) + float64(stockOrderBook.Bids[0].Price.Nano)/1e9
+	// Вычисляем цену фьючерса из bids[0].Price (лучшая цена покупки)
+	futurePrice = float64(futureOrderBook.Asks[0].Price.Units) + float64(futureOrderBook.Asks[0].Price.Nano)/1e9
+
+	return stockPrice, futurePrice, "orderbook", nil
+}
+
+// getLastPricesFallback - вспомогательная функция для fallback на GetLastPrices
+func (s *Service) getLastPricesFallback(stockFigi, futureFigi string) (stockPrice, futurePrice float64, source string, err error) {
+	prices, err := s.client.GetLastPrices([]string{stockFigi, futureFigi})
+	if err != nil {
+		log.Printf("Ошибка получения цен через GetLastPrices: %v", err)
+		return 0, 0, "", err
+	}
+
+	if len(prices) != 2 {
+		log.Printf("Ожидалось 2 цены, получено %d", len(prices))
+		return 0, 0, "", fmt.Errorf("ожидалось 2 цены, получено %d", len(prices))
+	}
+
+	var stockFound, futureFound bool
+	for _, p := range prices {
+		if p == nil {
+			continue
+		}
+		price := float64(p.Price.Units) + float64(p.Price.Nano)/1e9
+		if p.Figi == stockFigi {
+			stockPrice = price
+			stockFound = true
+		} else if p.Figi == futureFigi {
+			futurePrice = price
+			futureFound = true
+		}
+	}
+
+	if !stockFound || !futureFound {
+		log.Printf("Не найдены цены (stock=%v, future=%v)", stockFound, futureFound)
+		return 0, 0, "", fmt.Errorf("не найдены цены для stock=%v, future=%v", stockFound, futureFound)
+	}
+
+	return stockPrice, futurePrice, "lastprice", nil
 }

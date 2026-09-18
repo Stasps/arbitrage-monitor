@@ -9,8 +9,6 @@ import (
 	"arbitrage-monitor/internal/db"
 	"arbitrage-monitor/internal/webserver"
 	"arbitrage-monitor/pkg/models"
-
-	"github.com/vodolaz095/go-investAPI/investapi"
 )
 
 type Updater struct {
@@ -101,75 +99,61 @@ func (u *Updater) update(pair models.Pair) {
 	}
 
 	// 4. Получение цен с защитой от паники
-	var prices []*investapi.LastPrice
+	var stockPrice, futurePrice float64
+	var source string
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[%s] ПАНИКА при вызове GetLastPrices: %v", pair.ID, r)
+				log.Printf("[%s] ПАНИКА при вызове GetBestPrices: %v", pair.ID, r)
 			}
 		}()
-		prices, err = u.apiService.GetLastPrices([]string{stockInstr.Figi, futureInstr.Figi})
+		stockPrice, futurePrice, source, err = u.apiService.GetBestPrices(stockInstr.Figi, futureInstr.Figi)
 	}()
 	if err != nil {
 		log.Printf("[%s] Ошибка получения цен: %v", pair.ID, err)
 		// пробуем кэш
-		stockPrice, _ := u.db.GetLastPrice(stockInstr.Figi)
-		futurePrice, _ := u.db.GetLastPrice(futureInstr.Figi)
-		if stockPrice == nil || futurePrice == nil {
+		stockPriceDB, _ := u.db.GetLastPrice(stockInstr.Figi)
+		futurePriceDB, _ := u.db.GetLastPrice(futureInstr.Figi)
+		if stockPriceDB == nil || futurePriceDB == nil {
 			log.Printf("[%s] Нет кэшированных цен", pair.ID)
 			return
 		}
-		u.processData(stockInstr, futureInstr, stockPrice.Price, futurePrice.Price)
+		stockPrice = stockPriceDB.Price
+		futurePrice = futurePriceDB.Price
+		log.Printf("[%s] Используем кэшированные цены (источник: %s)", pair.ID, source)
+		u.processData(stockInstr, futureInstr, stockPrice, futurePrice)
 		return
 	}
 
-	// Проверка длины
-	if len(prices) != 2 {
-		log.Printf("[%s] Ожидалось 2 цены, получено %d", pair.ID, len(prices))
-		return
-	}
+	log.Printf("[%s] Получены цены из %s: акция %.2f, фьючерс %.2f", pair.ID, source, stockPrice, futurePrice)
 
-	var stockPrice, futurePrice float64
-	foundStock, foundFuture := false, false
-	for idx, p := range prices {
-		// Защита от nil элемента
-		if p == nil {
-			log.Printf("[%s] Цена [%d] равна nil", pair.ID, idx)
-			continue
-		}
-		// Защита от пустого FIGI
-		if p.Figi == "" {
-			log.Printf("[%s] Цена [%d] имеет пустой FIGI", pair.ID, idx)
-			continue
-		}
-		price := float64(p.Price.Units) + float64(p.Price.Nano)/1e9
-		// Сохраняем в БД с защитой
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("[%s] Паника при сохранении цены для %s: %v", pair.ID, p.Figi, r)
-				}
-			}()
-			u.db.SaveLastPrice(&models.LastPrice{
-				Figi:      p.Figi,
-				Price:     price,
-				PriceTime: p.Time.AsTime(),
-				UpdatedAt: time.Now(),
-			})
+	// Сохраняем цены в БД
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[%s] Паника при сохранении цены для %s: %v", pair.ID, stockInstr.Figi, r)
+			}
 		}()
-		if p.Figi == stockInstr.Figi {
-			stockPrice = price
-			foundStock = true
-		}
-		if p.Figi == futureInstr.Figi {
-			futurePrice = price
-			foundFuture = true
-		}
-	}
-	if !foundStock || !foundFuture {
-		log.Printf("[%s] Не найдены цены (stock=%v, future=%v)", pair.ID, foundStock, foundFuture)
-		return
-	}
+		u.db.SaveLastPrice(&models.LastPrice{
+			Figi:      stockInstr.Figi,
+			Price:     stockPrice,
+			PriceTime: time.Now(),
+			UpdatedAt: time.Now(),
+		})
+	}()
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[%s] Паника при сохранении цены для %s: %v", pair.ID, futureInstr.Figi, r)
+			}
+		}()
+		u.db.SaveLastPrice(&models.LastPrice{
+			Figi:      futureInstr.Figi,
+			Price:     futurePrice,
+			PriceTime: time.Now(),
+			UpdatedAt: time.Now(),
+		})
+	}()
 
 	u.processData(stockInstr, futureInstr, stockPrice, futurePrice)
 }
