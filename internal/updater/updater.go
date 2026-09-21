@@ -121,7 +121,7 @@ func (u *Updater) update(pair models.Pair) {
 		stockPrice = stockPriceDB.Price
 		futurePrice = futurePriceDB.Price
 		log.Printf("[%s] Используем кэшированные цены (источник: %s)", pair.ID, source)
-		u.processData(stockInstr, futureInstr, stockPrice, futurePrice)
+		u.processData(stockInstr, futureInstr, stockPrice, futurePrice, source)
 		return
 	}
 
@@ -155,10 +155,13 @@ func (u *Updater) update(pair models.Pair) {
 		})
 	}()
 
-	u.processData(stockInstr, futureInstr, stockPrice, futurePrice)
+	u.processData(stockInstr, futureInstr, stockPrice, futurePrice, source)
 }
 
-func (u *Updater) processData(stockInstr, futureInstr *models.Instrument, stockPrice, futurePrice float64) {
+// processData выполняет расчёты, логирует и отправляет в WebSocket
+// Принимает: stockInstr, futureInstr - инструменты, stockPrice, futurePrice - цены,
+// source - источник цены ("orderbook" или "lastprice")
+func (u *Updater) processData(stockInstr, futureInstr *models.Instrument, stockPrice, futurePrice float64, source string) {
 	if futureInstr == nil || futureInstr.ExpiryDate == nil || futureInstr.Figi == "" {
 		log.Printf("Пропуск расчёта для %s: неполные данные фьючерса", stockInstr.Ticker)
 		return
@@ -202,6 +205,7 @@ func (u *Updater) processData(stockInstr, futureInstr *models.Instrument, stockP
 		"ReturnPct":           result.ReturnPct,
 		"AnnualReturnPct":     result.AnnualReturnPct,
 		"GOPerShare":          result.GOPerShare,
+		"Source":              source,
 	}
 	u.srv.UpdatePair(pairID, data)
 }

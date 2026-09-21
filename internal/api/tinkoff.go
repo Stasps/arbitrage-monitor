@@ -91,10 +91,12 @@ func (c *TinkoffClient) GetLastPrices(figis []string) ([]*investapi.LastPrice, e
 // GetOrderBook получает стакан по FIGI идентификатору
 // Принимает: figi - FIGI идентификатор инструмента
 // Возвращает: *investapi.GetOrderBookResponse - ответ API с стаканом, error - ошибка при запросе
+// Используем Depth: 1 — достаточно только лучшей заявки (первой в стакане).
 func (c *TinkoffClient) GetOrderBook(figi string) (*investapi.GetOrderBookResponse, error) {
 	resp, err := c.client.MarketDataServiceClient.GetOrderBook(c.ctx,
 		&investapi.GetOrderBookRequest{
-			Figi: &figi,
+			Figi:  &figi,
+			Depth: 1, // без него API возвращает ошибку 30031 (Missing parameter: depth).
 		},
 	)
 	if err != nil {
