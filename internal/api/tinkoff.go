@@ -38,11 +38,16 @@ func (c *TinkoffClient) Close() error {
 // GetShareInfoByTicker получает информацию об акции по тикеру
 // Принимает: ticker - биржевой тикер акции (например, "SBER")
 // Возвращает: *investapi.Share - информация об акции, error - ошибка при запросе
+// Примечание: для поиска по тикеру API требует class_code. Используем TQBR
+// (основной режим торгов акциями на Мосбирже). Для акций на других площадках
+// (например, SPBEX) может потребоваться другой class_code.
 func (c *TinkoffClient) GetShareInfoByTicker(ticker string) (*investapi.Share, error) {
+	classCode := "TQBR"
 	resp, err := c.client.InstrumentsServiceClient.ShareBy(c.ctx,
 		&investapi.InstrumentRequest{
-			IdType: investapi.InstrumentIdType_INSTRUMENT_ID_TYPE_TICKER,
-			Id:     ticker,
+			IdType:    investapi.InstrumentIdType_INSTRUMENT_ID_TYPE_TICKER,
+			Id:        ticker,
+			ClassCode: &classCode,
 		},
 	)
 	if err != nil {

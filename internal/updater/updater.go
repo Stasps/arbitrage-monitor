@@ -107,7 +107,7 @@ func (u *Updater) update(pair models.Pair) {
 				log.Printf("[%s] ПАНИКА при вызове GetBestPrices: %v", pair.ID, r)
 			}
 		}()
-		stockPrice, futurePrice, source, err = u.apiService.GetBestPrices(stockInstr.Figi, futureInstr.Figi)
+		stockPrice, futurePrice, source, err = u.apiService.GetBestPrices(stockInstr.Figi, stockInstr.UID, futureInstr.Figi, futureInstr.UID)
 	}()
 	if err != nil {
 		log.Printf("[%s] Ошибка получения цен: %v", pair.ID, err)

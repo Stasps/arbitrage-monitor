@@ -18,7 +18,7 @@ import (
 
 const (
 	// Queries - запрос для поиска (можно указать несколько через пробел)
-	Queries = "PLZL"
+	Queries = "head"
 
 	// InstrumentFilter - фильтр по типу инструмента
 	// Возможные значения: "share", "bond", "etf", "futures", "currency", "option"
