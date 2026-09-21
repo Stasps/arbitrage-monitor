@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -176,4 +177,93 @@ func (s *Service) GetFutureGO(figi string) (float64, error) {
 // Возвращает: []*investapi.LastPrice - список последних цен, error - ошибка при запросе
 func (s *Service) GetLastPrices(figis []string) ([]*investapi.LastPrice, error) {
 	return s.client.GetLastPrices(figis)
+}
+
+// GetBestPrices получает лучшие цены для акции и фьючерса
+// Принимает: stockFigi, stockUid - идентификаторы акции (FIGI и UID),
+// futureFigi, futureUid - идентификаторы фьючерса (FIGI и UID)
+// Возвращает: stockPrice - цена акции, futurePrice - цена фьючерса,
+// source - источник цены ("orderbook" или "lastprice"), error - ошибка
+// Логика:
+//  1. Запрашивает стакан для акции — берёт лучшую заявку на продажу (asks[0].Price)
+//  2. Запрашивает стакан для фьючерса — берёт лучшую заявку на покупку (bids[0].Price)
+//  3. Если хотя бы один стакан пуст или недоступен — fallback на GetLastPrices
+func (s *Service) GetBestPrices(stockFigi, stockUid, futureFigi, futureUid string) (stockPrice, futurePrice float64, source string, err error) {
+	// Получаем стакан для акции
+	stockOrderBook, err := s.client.GetOrderBook(stockFigi)
+	if err != nil {
+		log.Printf("Ошибка получения стакана для акции %s: %v", stockFigi, err)
+		return s.getLastPricesFallback(stockFigi, stockUid, futureFigi, futureUid)
+	}
+
+	// Получаем стакан для фьючерса
+	futureOrderBook, err := s.client.GetOrderBook(futureFigi)
+	if err != nil {
+		log.Printf("Ошибка получения стакана для фьючерса %s: %v", futureFigi, err)
+		return s.getLastPricesFallback(stockFigi, stockUid, futureFigi, futureUid)
+	}
+
+	// Проверяем, что в стакане акции есть заявки на продажу (asks)
+	if len(stockOrderBook.Asks) == 0 {
+		log.Printf("Предупреждение: стакан акции %s пуст (нет asks), используем GetLastPrices", stockFigi)
+		return s.getLastPricesFallback(stockFigi, stockUid, futureFigi, futureUid)
+	}
+
+	// Проверяем, что в стакане фьючерса есть заявки на покупку (bids)
+	if len(futureOrderBook.Bids) == 0 {
+		log.Printf("Предупреждение: стакан фьючерса %s пуст (нет bids), используем GetLastPrices", futureFigi)
+		return s.getLastPricesFallback(stockFigi, stockUid, futureFigi, futureUid)
+	}
+
+	// Цена акции — лучшая заявка на продажу (по ней можем купить)
+	stockPrice = float64(stockOrderBook.Asks[0].Price.Units) + float64(stockOrderBook.Asks[0].Price.Nano)/1e9
+	// Цена фьючерса — лучшая заявка на покупку (по ней можем продать)
+	futurePrice = float64(futureOrderBook.Bids[0].Price.Units) + float64(futureOrderBook.Bids[0].Price.Nano)/1e9
+
+	return stockPrice, futurePrice, "orderbook", nil
+}
+
+// getLastPricesFallback — вспомогательная функция для fallback на GetLastPrices
+// Используется, когда стакан пуст или недоступен.
+// Принимает: stockFigi, stockUid - идентификаторы акции (FIGI и UID),
+// futureFigi, futureUid - идентификаторы фьючерса (FIGI и UID)
+//
+// Возвращает: stockPrice, futurePrice - цены, source - "lastprice", error - ошибка
+// Примечание: сравнение идёт по FIGI И UID одновременно, так как FIGI deprecated
+// и API может перестать его заполнять в ответе.
+func (s *Service) getLastPricesFallback(stockFigi, stockUid, futureFigi, futureUid string) (stockPrice, futurePrice float64, source string, err error) {
+	prices, err := s.client.GetLastPrices([]string{stockFigi, futureFigi})
+	if err != nil {
+		log.Printf("Ошибка получения цен через GetLastPrices: %v", err)
+		return 0, 0, "", err
+	}
+
+	if len(prices) != 2 {
+		log.Printf("Ожидалось 2 цены, получено %d", len(prices))
+		return 0, 0, "", fmt.Errorf("ожидалось 2 цены, получено %d", len(prices))
+	}
+
+	var stockFound, futureFound bool
+	for _, p := range prices {
+		if p == nil {
+			continue
+		}
+		price := float64(p.Price.Units) + float64(p.Price.Nano)/1e9
+
+		// Сравниваем по FIGI и UID (FIGI deprecated, может быть пустым)
+		if p.Figi == stockFigi || p.InstrumentUid == stockUid {
+			stockPrice = price
+			stockFound = true
+		} else if p.Figi == futureFigi || p.InstrumentUid == futureUid {
+			futurePrice = price
+			futureFound = true
+		}
+	}
+
+	if !stockFound || !futureFound {
+		log.Printf("Не найдены цены (stock=%v, future=%v)", stockFound, futureFound)
+		return 0, 0, "", fmt.Errorf("не найдены цены для stock=%v, future=%v", stockFound, futureFound)
+	}
+
+	return stockPrice, futurePrice, "lastprice", nil
 }

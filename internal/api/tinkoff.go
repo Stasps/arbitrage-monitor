@@ -38,11 +38,16 @@ func (c *TinkoffClient) Close() error {
 // GetShareInfoByTicker получает информацию об акции по тикеру
 // Принимает: ticker - биржевой тикер акции (например, "SBER")
 // Возвращает: *investapi.Share - информация об акции, error - ошибка при запросе
+// Примечание: для поиска по тикеру API требует class_code. Используем TQBR
+// (основной режим торгов акциями на Мосбирже). Для акций на других площадках
+// (например, SPBEX) может потребоваться другой class_code.
 func (c *TinkoffClient) GetShareInfoByTicker(ticker string) (*investapi.Share, error) {
+	classCode := "TQBR"
 	resp, err := c.client.InstrumentsServiceClient.ShareBy(c.ctx,
 		&investapi.InstrumentRequest{
-			IdType: investapi.InstrumentIdType_INSTRUMENT_ID_TYPE_TICKER,
-			Id:     ticker,
+			IdType:    investapi.InstrumentIdType_INSTRUMENT_ID_TYPE_TICKER,
+			Id:        ticker,
+			ClassCode: &classCode,
 		},
 	)
 	if err != nil {
@@ -81,6 +86,23 @@ func (c *TinkoffClient) GetLastPrices(figis []string) ([]*investapi.LastPrice, e
 		return nil, err
 	}
 	return resp.LastPrices, nil
+}
+
+// GetOrderBook получает стакан по FIGI идентификатору
+// Принимает: figi - FIGI идентификатор инструмента
+// Возвращает: *investapi.GetOrderBookResponse - ответ API с стаканом, error - ошибка при запросе
+// Используем Depth: 1 — достаточно только лучшей заявки (первой в стакане).
+func (c *TinkoffClient) GetOrderBook(figi string) (*investapi.GetOrderBookResponse, error) {
+	resp, err := c.client.MarketDataServiceClient.GetOrderBook(c.ctx,
+		&investapi.GetOrderBookRequest{
+			Figi:  &figi,
+			Depth: 1, // без него API возвращает ошибку 30031 (Missing parameter: depth).
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
 
 // GetFutureInfoByUID получает информацию о фьючерсе по уникальному идентификатору (UID)

@@ -14,7 +14,21 @@
         .negative { color: #f38ba8; }
         .pair { text-align: left; font-weight: bold; color: #89b4fa; }
         .header-left { text-align: left; }
-        .last-update { color: #a6adc8; font-size: 12px; }
+        .src { font-size: 10px; color: #6c7086; margin-left: 4px; }
+        .src-orderbook { color: #a6e3a1; }
+        .src-lastprice { color: #fab387; }
+        .src-cache { color: #f38ba8; }
+        .legend {
+            margin-top: 20px;
+            padding: 12px 16px;
+            background: #252537;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #a6adc8;
+            line-height: 1.8;
+        }
+        .legend-title { color: #89b4fa; font-weight: bold; margin-bottom: 6px; }
+        .legend code { color: #cdd6f4; font-family: monospace; }
     </style>
 </head>
 <body>
@@ -40,10 +54,29 @@
         </tbody>
     </table>
 
+    <div class="legend">
+        <div class="legend-title">Расшифровка индикаторов источника цены</div>
+        <div><code>o</code> (зелёный) — цена из стакана: для акции лучшая заявка на продажу, для фьючерса лучшая заявка на покупку</div>
+        <div><code>l</code> (оранжевый) — цена последней сделки (стакан пуст или недоступен)</div>
+        <div><code>c</code> (красный) — цена из кэша БД (API недоступен)</div>
+    </div>
+
     <script>
         const ws = new WebSocket('ws://' + window.location.host + '/ws');
         const tbody = document.getElementById('table-body');
         const statusDiv = document.getElementById('status');
+
+        // Возвращает HTML-индикатор источника цены
+        function sourceBadge(source) {
+            if (!source) return '';
+            const labels = {
+                'orderbook': { letter: 'o', title: 'Цена из стакана', cls: 'src-orderbook' },
+                'lastprice': { letter: 'l', title: 'Цена последней сделки', cls: 'src-lastprice' },
+                'cache':     { letter: 'c', title: 'Кэш из БД', cls: 'src-cache' }
+            };
+            const info = labels[source] || { letter: '?', title: source, cls: '' };
+            return '<span class="src ' + info.cls + '" title="' + info.title + '">' + info.letter + '</span>';
+        }
 
         ws.onopen = function() {
             statusDiv.textContent = '✅ Подключено к серверу';
@@ -59,8 +92,8 @@
                 const returnClass = row.ReturnPct >= 0 ? 'positive' : 'negative';
                 html += '<tr>';
                 html += '<td class="pair">' + row.PairID + '</td>';
-                html += '<td>' + row.PriceStock.toFixed(2) + '</td>';
-                html += '<td>' + row.PriceFuturePerShare.toFixed(2) + '</td>';
+                html += '<td>' + row.PriceStock.toFixed(2) + sourceBadge(row.Source) + '</td>';
+                html += '<td>' + row.PriceFuturePerShare.toFixed(2) + sourceBadge(row.Source) + '</td>';
                 html += '<td class="' + spreadClass + '">' + row.Spread.toFixed(2) + '</td>';
                 html += '<td>' + (row.DividendNet ? row.DividendNet.toFixed(2) : '-') + '</td>';
                 html += '<td>' + row.SellPrice.toFixed(2) + '</td>';
