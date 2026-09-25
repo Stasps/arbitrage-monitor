@@ -42,8 +42,8 @@ func main() {
 		log.Fatal("Ошибка загрузки конфига:", err)
 	}
 
-	log.Printf("Конфиг загружен: интервал %dс, комиссия акции %.2f%%, комиссия фьючерса %.2f%%",
-		cfg.UpdateInterval, cfg.CommissionStock*100, cfg.CommissionFuture*100)
+	log.Printf("Конфиг загружен: интервал %dс, комиссии %.2f%%/%.2f%%, множитель ГО %.2f",
+		cfg.UpdateInterval, cfg.CommissionStock*100, cfg.CommissionFuture*100, cfg.MarginMultiplier)
 
 	// БД
 	database, err := db.NewDB("arbitrage.db")
@@ -59,11 +59,11 @@ func main() {
 	}
 	defer client.Close()
 
-	apiService := api.NewService(client, database)
+	apiService := api.NewService(client, database, cfg.MarginMultiplier)
 	calc := calculator.NewCalculator(cfg.CommissionStock, cfg.CommissionFuture)
 
 	// === ЗАПУСК ВЕБ-СЕРВЕРА ===
-	srv := webserver.NewServer()
+	srv := webserver.NewServer(cfg.MarginMultiplier)
 	go func() {
 		if err := srv.Run(":" + strconv.Itoa(cfg.Port)); err != nil {
 			log.Printf("Ошибка веб-сервера: %v", err)

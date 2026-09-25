@@ -8,7 +8,12 @@
         h1 { text-align: center; color: #89b4fa; }
         #status { text-align: center; margin-bottom: 20px; font-size: 14px; color: #a6adc8; }
         table { width: 100%; border-collapse: collapse; font-size: 14px; }
-        th { background: #313244; color: #cdd6f4; padding: 10px; text-align: right; }
+        th { background: #313244; color: #cdd6f4; padding: 10px; text-align: right; user-select: none; }
+        th.sortable { cursor: pointer; }
+        th.sortable:hover { background: #3d3d52; }
+        th.drag-over { background: #45475a; }
+        th.dragging { opacity: 0.4; }
+        th .sort-indicator { font-size: 10px; color: #89b4fa; margin-left: 4px; }
         td { padding: 8px 10px; text-align: right; border-bottom: 1px solid #313244; }
         .positive { color: #a6e3a1; }
         .negative { color: #f38ba8; }
@@ -29,28 +34,27 @@
         }
         .legend-title { color: #89b4fa; font-weight: bold; margin-bottom: 6px; }
         .legend code { color: #cdd6f4; font-family: monospace; }
+        .risk-badge {
+            display: inline-block;
+            font-size: 12px;
+            font-weight: bold;
+            padding: 3px 10px;
+            border-radius: 12px;
+            margin-left: 10px;
+            vertical-align: middle;
+            cursor: help;
+        }
+        .risk-kpur { background: #fab387; color: #1e1e2f; }
+        .risk-ksur { background: #a6e3a1; color: #1e1e2f; }
     </style>
 </head>
 <body>
-    <h1>📊 Арбитражный монитор</h1>
+    <h1>📊 Арбитражный монитор <span id="risk-badge" class="risk-badge" style="display:none;"></span></h1>
     <div id="status">⏳ Ожидание данных...</div>
     <table id="data-table">
-        <thead>
-            <tr>
-                <th class="header-left">Пара</th>
-                <th>Акция</th>
-                <th>Фьюч(акц)</th>
-                <th>Спред</th>
-                <th>Див.чист</th>
-                <th>Цена прод</th>
-                <th>Дней</th>
-                <th>Доходность</th>
-                <th>Годовая</th>
-                <th>ГО/акц</th>
-            </tr>
-        </thead>
+        <thead id="table-head"></thead>
         <tbody id="table-body">
-            <tr><td colspan="10" style="text-align:center;">Нет данных</td></tr>
+            <tr><td colspan="12" style="text-align:center;">Нет данных</td></tr>
         </tbody>
     </table>
 
@@ -59,14 +63,11 @@
         <div><code>o</code> (зелёный) — цена из стакана: для акции лучшая заявка на продажу, для фьючерса лучшая заявка на покупку</div>
         <div><code>l</code> (оранжевый) — цена последней сделки (стакан пуст или недоступен)</div>
         <div><code>c</code> (красный) — цена из кэша БД (API недоступен)</div>
+        <div style="margin-top:8px;">Кликните на заголовок колонки — сортировка. Перетащите заголовок — изменение порядка колонок.</div>
     </div>
 
     <script>
-        const ws = new WebSocket('ws://' + window.location.host + '/ws');
-        const tbody = document.getElementById('table-body');
-        const statusDiv = document.getElementById('status');
-
-        // Возвращает HTML-индикатор источника цены
+        // ============ ИНДИКАТОР ИСТОЧНИКА ЦЕНЫ ============
         function sourceBadge(source) {
             if (!source) return '';
             const labels = {
@@ -78,6 +79,190 @@
             return '<span class="src ' + info.cls + '" title="' + info.title + '">' + info.letter + '</span>';
         }
 
+        // ============ ОПИСАНИЕ КОЛОНОК ============
+        // Каждая колонка: id, label, align, value (для сортировки), render (HTML для ячейки)
+        const COLUMNS = [
+            { id: 'pair', label: 'Пара', align: 'left',
+              value: r => r.PairID,
+              render: r => '<td class="pair">' + r.PairID + '</td>' },
+
+            { id: 'priceStock', label: 'Акция',
+              value: r => r.PriceStock,
+              render: r => '<td>' + r.PriceStock.toFixed(2) + sourceBadge(r.Source) + '</td>' },
+
+            { id: 'priceFuture', label: 'Фьюч(акц)',
+              value: r => r.PriceFuturePerShare,
+              render: r => '<td>' + r.PriceFuturePerShare.toFixed(2) + sourceBadge(r.Source) + '</td>' },
+
+            { id: 'spread', label: 'Спред',
+              value: r => r.Spread,
+              render: r => '<td class="' + (r.Spread >= 0 ? 'positive' : 'negative') + '">' + r.Spread.toFixed(2) + '</td>' },
+
+            { id: 'divDate', label: 'Дата отсечки',
+              // Сортируем по ISO-дате (DividendDateSort), пустые — в конец
+              value: r => r.DividendDateSort || '9999-99-99',
+              render: r => '<td>' + (r.DividendDate || '-') + '</td>' },
+
+            { id: 'divYield', label: 'Див.дох.%',
+              value: r => r.DividendYield || 0,
+              render: r => '<td>' + (r.DividendYield ? (r.DividendYield * 100).toFixed(2) + '%' : '-') + '</td>' },
+
+            { id: 'divNet', label: 'Див.чист',
+              value: r => r.DividendNet || 0,
+              render: r => '<td>' + (r.DividendNet ? r.DividendNet.toFixed(2) + ' ₽' : '-') + '</td>' },
+
+            { id: 'sellPrice', label: 'Цена прод',
+              value: r => r.SellPrice,
+              render: r => '<td>' + r.SellPrice.toFixed(2) + '</td>' },
+
+            { id: 'daysToExp', label: 'Дней',
+              value: r => r.DaysToExpiry,
+              render: r => '<td>' + r.DaysToExpiry + '</td>' },
+
+            { id: 'returnPct', label: 'Доходность',
+              value: r => r.ReturnPct,
+              render: r => '<td class="' + (r.ReturnPct >= 0 ? 'positive' : 'negative') + '">' + (r.ReturnPct * 100).toFixed(2) + '%</td>' },
+
+            { id: 'annualPct', label: 'Годовая',
+              value: r => r.AnnualReturnPct,
+              render: r => '<td class="' + (r.AnnualReturnPct >= 0 ? 'positive' : 'negative') + '">' + (r.AnnualReturnPct * 100).toFixed(2) + '%</td>' },
+
+            { id: 'goPerShare', label: 'ГО/акц',
+              value: r => r.GOPerShare,
+              render: r => '<td>' + r.GOPerShare.toFixed(2) + '</td>' },
+        ];
+
+        // ============ СОСТОЯНИЕ ============
+        let columnOrder = loadColumnOrder();
+        let sortState = { columnId: 'divDate', direction: 'asc' }; // сортировка по умолчанию
+        let lastData = [];
+
+        function loadColumnOrder() {
+            const saved = localStorage.getItem('columnOrder');
+            if (!saved) return COLUMNS.map(c => c.id);
+            try {
+                const parsed = JSON.parse(saved);
+                // Проверяем, что все id из COLUMNS присутствуют
+                const allIds = COLUMNS.map(c => c.id);
+                if (allIds.every(id => parsed.includes(id)) && parsed.length === allIds.length) {
+                    return parsed;
+                }
+            } catch (e) {}
+            return COLUMNS.map(c => c.id);
+        }
+
+        // ============ РЕНДЕР ЗАГОЛОВКА ============
+        const thead = document.getElementById('table-head');
+        const tbody = document.getElementById('table-body');
+        const statusDiv = document.getElementById('status');
+
+        function renderHeader() {
+            let html = '<tr>';
+            columnOrder.forEach(id => {
+                const col = COLUMNS.find(c => c.id === id);
+                if (!col) return;
+                const isSorted = sortState.columnId === id;
+                const indicator = isSorted ? '<span class="sort-indicator">' + (sortState.direction === 'asc' ? '▲' : '▼') + '</span>' : '';
+                const alignClass = col.align === 'left' ? ' class="header-left sortable"' : ' class="sortable"';
+                html += '<th' + alignClass +
+                        ' draggable="true"' +
+                        ' data-col-id="' + id + '">' +
+                        col.label + indicator + '</th>';
+            });
+            html += '</tr>';
+            thead.innerHTML = html;
+            attachHeaderEvents();
+        }
+
+        // ============ ОБРАБОТЧИКИ ЗАГОЛОВКА (сортировка + drag) ============
+        let dragSrcId = null;
+
+        function attachHeaderEvents() {
+            thead.querySelectorAll('th').forEach(th => {
+                const colId = th.dataset.colId;
+
+                // Сортировка
+                th.addEventListener('click', () => {
+                    if (sortState.columnId === colId) {
+                        sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        sortState.columnId = colId;
+                        sortState.direction = 'asc';
+                    }
+                    renderHeader();
+                    renderBody();
+                });
+
+                // Drag & drop
+                th.addEventListener('dragstart', e => {
+                    dragSrcId = colId;
+                    th.classList.add('dragging');
+                    e.dataTransfer.effectAllowed = 'move';
+                });
+                th.addEventListener('dragend', () => {
+                    th.classList.remove('dragging');
+                    thead.querySelectorAll('th').forEach(t => t.classList.remove('drag-over'));
+                });
+                th.addEventListener('dragover', e => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    if (dragSrcId && dragSrcId !== colId) th.classList.add('drag-over');
+                });
+                th.addEventListener('dragleave', () => {
+                    th.classList.remove('drag-over');
+                });
+                th.addEventListener('drop', e => {
+                    e.preventDefault();
+                    if (!dragSrcId || dragSrcId === colId) return;
+                    const srcIdx = columnOrder.indexOf(dragSrcId);
+                    const dstIdx = columnOrder.indexOf(colId);
+                    columnOrder.splice(srcIdx, 1);
+                    columnOrder.splice(dstIdx, 0, dragSrcId);
+                    localStorage.setItem('columnOrder', JSON.stringify(columnOrder));
+                    renderHeader();
+                    renderBody();
+                });
+            });
+        }
+
+        // ============ РЕНДЕР ТЕЛА ТАБЛИЦЫ ============
+        function renderBody() {
+            if (!lastData.length) {
+                tbody.innerHTML = '<tr><td colspan="' + columnOrder.length + '" style="text-align:center;">Нет данных</td></tr>';
+                return;
+            }
+
+            // Сортировка
+            const sorted = [...lastData].sort((a, b) => {
+                const col = COLUMNS.find(c => c.id === sortState.columnId);
+                if (!col) return 0;
+                const av = col.value(a);
+                const bv = col.value(b);
+                let cmp = 0;
+                if (typeof av === 'string') {
+                    cmp = av.localeCompare(bv, 'ru');
+                } else {
+                    cmp = av - bv;
+                }
+                return sortState.direction === 'asc' ? cmp : -cmp;
+            });
+
+            // Отрисовка строк
+            let html = '';
+            sorted.forEach(row => {
+                html += '<tr>';
+                columnOrder.forEach(id => {
+                    const col = COLUMNS.find(c => c.id === id);
+                    if (col) html += col.render(row);
+                });
+                html += '</tr>';
+            });
+            tbody.innerHTML = html;
+        }
+
+        // ============ WEBSOCKET ============
+        const ws = new WebSocket('ws://' + window.location.host + '/ws');
+
         ws.onopen = function() {
             statusDiv.textContent = '✅ Подключено к серверу';
         };
@@ -85,31 +270,31 @@
         ws.onmessage = function(event) {
             const data = JSON.parse(event.data);
             if (!Array.isArray(data)) return;
-
-            let html = '';
-            data.forEach(row => {
-                const spreadClass = row.Spread >= 0 ? 'positive' : 'negative';
-                const returnClass = row.ReturnPct >= 0 ? 'positive' : 'negative';
-                html += '<tr>';
-                html += '<td class="pair">' + row.PairID + '</td>';
-                html += '<td>' + row.PriceStock.toFixed(2) + sourceBadge(row.Source) + '</td>';
-                html += '<td>' + row.PriceFuturePerShare.toFixed(2) + sourceBadge(row.Source) + '</td>';
-                html += '<td class="' + spreadClass + '">' + row.Spread.toFixed(2) + '</td>';
-                html += '<td>' + (row.DividendNet ? row.DividendNet.toFixed(2) : '-') + '</td>';
-                html += '<td>' + row.SellPrice.toFixed(2) + '</td>';
-                html += '<td>' + row.DaysToExpiry + '</td>';
-                html += '<td class="' + returnClass + '">' + (row.ReturnPct * 100).toFixed(2) + '%</td>';
-                html += '<td class="' + returnClass + '">' + (row.AnnualReturnPct * 100).toFixed(2) + '%</td>';
-                html += '<td>' + row.GOPerShare.toFixed(2) + '</td>';
-                html += '</tr>';
-            });
-            tbody.innerHTML = html;
+            lastData = data;
+            renderBody();
             statusDiv.textContent = '🔄 Обновлено: ' + new Date().toLocaleTimeString();
         };
 
         ws.onclose = function() {
             statusDiv.textContent = '❌ Соединение потеряно. Перезагрузите страницу.';
         };
+
+        // ============ КОНФИГ (уровень риска) ============
+        fetch('/api/config')
+            .then(response => response.json())
+            .then(cfg => {
+                const badge = document.getElementById('risk-badge');
+                const isKpur = cfg.margin_multiplier < 1.0;
+                badge.textContent = cfg.risk_level;
+                badge.className = 'risk-badge ' + (isKpur ? 'risk-kpur' : 'risk-ksur');
+                badge.title = 'Множитель ГО: ' + cfg.margin_multiplier.toFixed(2) +
+                              (isKpur ? ' (повышенный уровень риска)' : ' (стандартный уровень риска)');
+                badge.style.display = 'inline-block';
+            })
+            .catch(err => console.error('Ошибка загрузки конфига:', err));
+
+        // ============ ПЕРВЫЙ РЕНДЕР ============
+        renderHeader();
     </script>
 </body>
 </html>

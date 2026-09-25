@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -170,9 +171,11 @@ func (u *Updater) processData(stockInstr, futureInstr *models.Instrument, stockP
 	div, _ := u.db.GetDividend(stockInstr.Ticker)
 	var dividend float64
 	var paymentDate *time.Time
+	var exDate *time.Time
 	if div != nil {
 		dividend = div.Dividend
 		paymentDate = &div.PaymentDate
+		exDate = &div.ExDate
 	}
 
 	goVal, _ := u.apiService.GetFutureGO(futureInstr.Figi)
@@ -200,6 +203,9 @@ func (u *Updater) processData(stockInstr, futureInstr *models.Instrument, stockP
 		"PriceFuturePerShare": result.PriceFuturePerShare,
 		"Spread":              result.Spread,
 		"DividendNet":         result.DividendNet,
+		"DividendYield":       result.DividendYield,
+		"DividendDate":        formatDatePtr(exDate),
+		"DividendDateSort":    formatDateISOPtr(exDate), // для сортировки
 		"SellPrice":           result.SellPrice,
 		"DaysToExpiry":        result.DaysToExpiry,
 		"ReturnPct":           result.ReturnPct,
@@ -208,4 +214,25 @@ func (u *Updater) processData(stockInstr, futureInstr *models.Instrument, stockP
 		"Source":              source,
 	}
 	u.srv.UpdatePair(pairID, data)
+}
+
+// formatDatePtr форматирует *time.Time в строку "2 янв" (день + сокращённый месяц на русском)
+// или пустую строку, если nil. Год не выводится — для краткости.
+func formatDatePtr(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	months := []string{
+		"янв", "фев", "мар", "апр", "май", "июн",
+		"июл", "авг", "сен", "окт", "ноя", "дек",
+	}
+	return fmt.Sprintf("%d %s", t.Day(), months[t.Month()-1])
+}
+
+// formatDateISOPtr возвращает ISO-дату (YYYY-MM-DD) для сортировки, или "" если nil
+func formatDateISOPtr(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.Format("2006-01-02")
 }
