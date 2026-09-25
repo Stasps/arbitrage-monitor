@@ -205,6 +205,7 @@ func (u *Updater) processData(stockInstr, futureInstr *models.Instrument, stockP
 		"DividendNet":         result.DividendNet,
 		"DividendYield":       result.DividendYield,
 		"DividendDate":        formatDatePtr(exDate),
+		"DividendDateSort":    formatDateISOPtr(exDate), // для сортировки
 		"SellPrice":           result.SellPrice,
 		"DaysToExpiry":        result.DaysToExpiry,
 		"ReturnPct":           result.ReturnPct,
@@ -226,4 +227,12 @@ func formatDatePtr(t *time.Time) string {
 		"июл", "авг", "сен", "окт", "ноя", "дек",
 	}
 	return fmt.Sprintf("%d %s", t.Day(), months[t.Month()-1])
+}
+
+// formatDateISOPtr возвращает ISO-дату (YYYY-MM-DD) для сортировки, или "" если nil
+func formatDateISOPtr(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.Format("2006-01-02")
 }
