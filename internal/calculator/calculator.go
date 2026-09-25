@@ -46,6 +46,9 @@ func NewCalculator(commissionStock, commissionFuture float64) *Calculator {
 }
 
 // Calculate выполняет все расчёты
+// Формула доходности: (sellPrice − priceStock − commissionTotal) / (priceStock − dividendNet + goPerShare)
+// Дивиденд вычитается из инвестированного капитала, так как приходит на счёт
+// через 1-2 недели после отсечки и может быть реинвестирован.
 func (c *Calculator) Calculate(data InputData) Result {
 	// 1. Цена 1 акции во фьючерсе
 	priceFuturePerShare := data.PriceFuture / float64(data.LotFuture)
@@ -74,7 +77,9 @@ func (c *Calculator) Calculate(data InputData) Result {
 	goPerShare := data.GO / float64(data.LotFuture)
 
 	// 7. Инвестированный капитал
-	investedCapital := data.PriceStock + goPerShare
+	// Дивиденд вычитается, так как он приходит на счёт через 1-2 недели
+	// и может быть реинвестирован. Для бездивидендных акций dividendNet = 0.
+	investedCapital := data.PriceStock - dividendNet + goPerShare
 
 	// 8. Комиссия (раздельная)
 	commissionTotal := c.CommissionStock*data.PriceStock + c.CommissionFuture*priceFuturePerShare
