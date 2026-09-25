@@ -27,6 +27,7 @@ type Result struct {
 	PriceFuturePerShare float64
 	Spread              float64
 	DividendNet         float64
+	DividendYield       float64
 	SellPrice           float64
 	DaysToExpiry        int
 	GOPerShare          float64
@@ -61,6 +62,12 @@ func (c *Calculator) Calculate(data InputData) Result {
 	if data.Dividend > 0 && data.DividendPaymentDate != nil &&
 		!data.DividendPaymentDate.After(data.ExpiryDate) {
 		dividendNet = data.Dividend * 0.87 // налог 13%
+	}
+
+	// Дивидендная доходность
+	var dividendYield float64
+	if data.PriceStock > 0 {
+		dividendYield = dividendNet / data.PriceStock
 	}
 
 	// 4. Цена продажи
@@ -103,6 +110,7 @@ func (c *Calculator) Calculate(data InputData) Result {
 		PriceFuturePerShare: priceFuturePerShare,
 		Spread:              spread,
 		DividendNet:         dividendNet,
+		DividendYield:       dividendYield,
 		SellPrice:           sellPrice,
 		DaysToExpiry:        daysToExpiry,
 		GOPerShare:          goPerShare,

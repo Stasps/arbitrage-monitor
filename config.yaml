@@ -3,8 +3,49 @@ commission_stock: 0.0004
 commission_future: 0.00025
 margin_multiplier: 0.5      # КПУР: 0.5, КСУР: 1.0 (ГО по API возвращается для КСУР)
 port: 8080
+
 pairs:
+  - id: "belu"
+    stock_ticker: "BELU"
+    future_ticker: "NBZ6"
+    future_uid: "e20a141c-da81-4ce5-8a0d-12514226cc8d"
+
+  - id: "nvtk"
+    stock_ticker: "NVTK"
+    future_ticker: "NVZ6"
+    future_uid: "8ab644e7-4a24-4144-8c26-c30b9004cb6c"
+
+  - id: "gmkn"
+    stock_ticker: "GMKN"
+    future_ticker: "GKZ6"
+    future_uid: "8404feff-c28c-4eb7-9006-f3a69854f5a2"
+
+  - id: "tatn"
+    stock_ticker: "TATN"
+    future_ticker: "TTZ6"
+    future_uid: "768b83d7-c3bf-4774-bdaa-6e702923f544"
+
+  - id: "tatnp"
+    stock_ticker: "TATNP"
+    future_ticker: "TPZ6"
+    future_uid: "8fafbd1f-a41d-48ef-ad53-f5a0d1f5bae1"
+
+  - id: "sibn"
+    stock_ticker: "SIBN"
+    future_ticker: "SOZ6"
+    future_uid: "3023e309-8bde-4414-9ae5-8d6c92171ac8"
+
+  - id: "bspb"
+    stock_ticker: "BSPB"
+    future_ticker: "BSZ6"
+    future_uid: "f7694bf7-d6ad-4945-9a43-7984865c1856"
+
   - id: "head"
     stock_ticker: "HEAD"
     future_ticker: "HDZ6"
     future_uid: "53ecf2f0-7442-416c-a00d-db1e72a44dcb"
+
+  - id: "t"
+    stock_ticker: "T"
+    future_ticker: "TBZ6"
+    future_uid: "4539374c-0c72-4ddc-aa0d-09e33ebd8702"

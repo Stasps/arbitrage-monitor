@@ -18,11 +18,11 @@ import (
 
 const (
 	// Queries - запрос для поиска (можно указать несколько через пробел)
-	Queries = "head"
+	Queries = "TPZ6 TTZ6 SOZ6 BSZ6 HDZ6 TBZ6"
 
 	// InstrumentFilter - фильтр по типу инструмента
 	// Возможные значения: "share", "bond", "etf", "futures", "currency", "option"
-	InstrumentFilter = "share"
+	InstrumentFilter = "futures"
 
 	// ExpiryFilter - фильтр по дате экспирации (только для фьючерсов)
 	// Возможные значения:
