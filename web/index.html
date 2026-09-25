@@ -29,10 +29,22 @@
         }
         .legend-title { color: #89b4fa; font-weight: bold; margin-bottom: 6px; }
         .legend code { color: #cdd6f4; font-family: monospace; }
+        .risk-badge {
+            display: inline-block;
+            font-size: 12px;
+            font-weight: bold;
+            padding: 3px 10px;
+            border-radius: 12px;
+            margin-left: 10px;
+            vertical-align: middle;
+            cursor: help;
+        }
+        .risk-kpur { background: #fab387; color: #1e1e2f; }
+        .risk-ksur { background: #a6e3a1; color: #1e1e2f; }
     </style>
 </head>
 <body>
-    <h1>📊 Арбитражный монитор</h1>
+    <h1>📊 Арбитражный монитор <span id="risk-badge" class="risk-badge" style="display:none;"></span></h1>
     <div id="status">⏳ Ожидание данных...</div>
     <table id="data-table">
         <thead>
@@ -65,6 +77,20 @@
         const ws = new WebSocket('ws://' + window.location.host + '/ws');
         const tbody = document.getElementById('table-body');
         const statusDiv = document.getElementById('status');
+
+        // Загружаем конфиг (уровень риска)
+        fetch('/api/config')
+            .then(response => response.json())
+            .then(cfg => {
+                const badge = document.getElementById('risk-badge');
+                const isKpur = cfg.margin_multiplier < 1.0;
+                badge.textContent = cfg.risk_level;
+                badge.className = 'risk-badge ' + (isKpur ? 'risk-kpur' : 'risk-ksur');
+                badge.title = 'Множитель ГО: ' + cfg.margin_multiplier.toFixed(2) +
+                              (isKpur ? ' (повышенный уровень риска)' : ' (стандартный уровень риска)');
+                badge.style.display = 'inline-block';
+            })
+            .catch(err => console.error('Ошибка загрузки конфига:', err));
 
         // Возвращает HTML-индикатор источника цены
         function sourceBadge(source) {

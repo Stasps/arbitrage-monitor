@@ -1,6 +1,7 @@
 update_interval: 5
 commission_stock: 0.0004
 commission_future: 0.00025
+margin_multiplier: 0.5      # КПУР: 0.5, КСУР: 1.0 (ГО по API возвращается для КСУР)
 port: 8080
 pairs:
   - id: "head"

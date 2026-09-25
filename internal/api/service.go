@@ -14,17 +14,21 @@ import (
 // Service - сервисный слой для работы с API и БД
 // Обеспечивает кэширование данных и автоматическое получение из API при отсутствии в БД
 type Service struct {
-	client *TinkoffClient
-	db     *db.DB
+	client           *TinkoffClient
+	db               *db.DB
+	marginMultiplier float64
 }
 
 // NewService создает новый сервис
-// Принимает: client - клиент API, database - подключение к БД
+// Принимает: client - клиент API, database - подключение к БД,
+// marginMultiplier - множитель ГО (0.5 для КПУР, 1.0 для КСУР)
+//
 // Возвращает: *Service - сервисный слой
-func NewService(client *TinkoffClient, database *db.DB) *Service {
+func NewService(client *TinkoffClient, database *db.DB, marginMultiplier float64) *Service {
 	return &Service{
-		client: client,
-		db:     database,
+		client:           client,
+		db:               database,
+		marginMultiplier: marginMultiplier,
 	}
 }
 
@@ -167,9 +171,15 @@ func (s *Service) GetOrFetchInstrumentByUID(uid string) (*models.Instrument, err
 
 // GetFutureGO получает гарантийное обеспечение для фьючерса через API
 // Принимает: figi - FIGI идентификатор фьючерса
-// Возвращает: float64 - ГО на один контракт в рублях, error - ошибка при запросе
+// Возвращает: float64 - ГО на один контракт в рублях (с учётом уровня риска клиента), error - ошибка
+// Примечание: API возвращает ГО для стандартного уровня риска (КСУР).
+// Для КПУР применяется множитель margin_multiplier (обычно 0.5).
 func (s *Service) GetFutureGO(figi string) (float64, error) {
-	return s.client.GetFutureGO(figi)
+	raw, err := s.client.GetFutureGO(figi)
+	if err != nil {
+		return 0, err
+	}
+	return raw * s.marginMultiplier, nil
 }
 
 // GetLastPrices получает последние цены через API клиент
