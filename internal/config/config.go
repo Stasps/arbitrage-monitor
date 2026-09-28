@@ -28,6 +28,11 @@ func LoadConfig(path string) (*models.Config, error) {
 		return nil, err
 	}
 
+	// Значение по умолчанию для множителя ГО
+	if cfg.MarginMultiplier == 0 {
+		cfg.MarginMultiplier = 1.0
+	}
+
 	// Устанавливаем значение по умолчанию для порта, если он не указан или равен 0
 	if cfg.Port == 0 {
 		cfg.Port = 8080

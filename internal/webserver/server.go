@@ -1,6 +1,7 @@
 package webserver
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -12,26 +13,30 @@ import (
 
 // Server — веб-сервер с WebSocket и хранением данных
 type Server struct {
-	upgrader   websocket.Upgrader
-	clients    map[*websocket.Conn]bool
-	broadcast  chan interface{} // для отправки полного массива
-	register   chan *websocket.Conn
-	unregister chan *websocket.Conn
-	mu         sync.RWMutex
-	dataStore  map[string]interface{} // key = PairID, value = данные пары
+	upgrader         websocket.Upgrader
+	clients          map[*websocket.Conn]bool
+	broadcast        chan interface{} // для отправки полного массива
+	register         chan *websocket.Conn
+	unregister       chan *websocket.Conn
+	mu               sync.RWMutex
+	dataStore        map[string]interface{} // key = PairID, value = данные пары
+	marginMultiplier float64
 }
 
 // NewServer создаёт новый сервер
-func NewServer() *Server {
+// Принимает: marginMultiplier - множитель ГО для отображения уровня риска на сайте
+// Возвращает: *Server
+func NewServer(marginMultiplier float64) *Server {
 	return &Server{
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
-		clients:    make(map[*websocket.Conn]bool),
-		broadcast:  make(chan interface{}, 100),
-		register:   make(chan *websocket.Conn),
-		unregister: make(chan *websocket.Conn),
-		dataStore:  make(map[string]interface{}),
+		clients:          make(map[*websocket.Conn]bool),
+		broadcast:        make(chan interface{}, 100),
+		register:         make(chan *websocket.Conn),
+		unregister:       make(chan *websocket.Conn),
+		dataStore:        make(map[string]interface{}),
+		marginMultiplier: marginMultiplier,
 	}
 }
 
@@ -39,11 +44,23 @@ func NewServer() *Server {
 func (s *Server) Run(addr string) error {
 	http.HandleFunc("/", s.serveHome)
 	http.HandleFunc("/ws", s.handleWebSocket)
+	http.HandleFunc("/api/config", s.serveConfig)
 
 	go s.runLoop()
 
 	log.Printf("Веб-сервер запущен на http://%s", addr)
 	return http.ListenAndServe(addr, nil)
+}
+
+// serveConfig отдаёт JSON с настройками, которые нужны клиенту для отображения
+// Возвращает: {"margin_multiplier": 0.5, "risk_level": "КПУР"}
+func (s *Server) serveConfig(w http.ResponseWriter, r *http.Request) {
+	riskLevel := "КСУР"
+	if s.marginMultiplier < 1.0 {
+		riskLevel = "КПУР"
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	fmt.Fprintf(w, `{"margin_multiplier": %.2f, "risk_level": "%s"}`, s.marginMultiplier, riskLevel)
 }
 
 // serveHome отдаёт HTML-страницу из файла

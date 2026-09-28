@@ -15,6 +15,7 @@ type Config struct {
 	UpdateInterval   int     `yaml:"update_interval"`
 	CommissionStock  float64 `yaml:"commission_stock"`
 	CommissionFuture float64 `yaml:"commission_future"`
+	MarginMultiplier float64 `yaml:"margin_multiplier"`
 	Port             int     `yaml:"port"`
 	Pairs            []Pair  `yaml:"pairs"`
 }

@@ -27,6 +27,7 @@ type Result struct {
 	PriceFuturePerShare float64
 	Spread              float64
 	DividendNet         float64
+	DividendYield       float64
 	SellPrice           float64
 	DaysToExpiry        int
 	GOPerShare          float64
@@ -46,6 +47,9 @@ func NewCalculator(commissionStock, commissionFuture float64) *Calculator {
 }
 
 // Calculate выполняет все расчёты
+// Формула доходности: (sellPrice − priceStock − commissionTotal) / (priceStock − dividendNet + goPerShare)
+// Дивиденд вычитается из инвестированного капитала, так как приходит на счёт
+// через 1-2 недели после отсечки и может быть реинвестирован.
 func (c *Calculator) Calculate(data InputData) Result {
 	// 1. Цена 1 акции во фьючерсе
 	priceFuturePerShare := data.PriceFuture / float64(data.LotFuture)
@@ -58,6 +62,12 @@ func (c *Calculator) Calculate(data InputData) Result {
 	if data.Dividend > 0 && data.DividendPaymentDate != nil &&
 		!data.DividendPaymentDate.After(data.ExpiryDate) {
 		dividendNet = data.Dividend * 0.87 // налог 13%
+	}
+
+	// Дивидендная доходность
+	var dividendYield float64
+	if data.PriceStock > 0 {
+		dividendYield = dividendNet / data.PriceStock
 	}
 
 	// 4. Цена продажи
@@ -74,7 +84,9 @@ func (c *Calculator) Calculate(data InputData) Result {
 	goPerShare := data.GO / float64(data.LotFuture)
 
 	// 7. Инвестированный капитал
-	investedCapital := data.PriceStock + goPerShare
+	// Дивиденд вычитается, так как он приходит на счёт через 1-2 недели
+	// и может быть реинвестирован. Для бездивидендных акций dividendNet = 0.
+	investedCapital := data.PriceStock - dividendNet + goPerShare
 
 	// 8. Комиссия (раздельная)
 	commissionTotal := c.CommissionStock*data.PriceStock + c.CommissionFuture*priceFuturePerShare
@@ -98,6 +110,7 @@ func (c *Calculator) Calculate(data InputData) Result {
 		PriceFuturePerShare: priceFuturePerShare,
 		Spread:              spread,
 		DividendNet:         dividendNet,
+		DividendYield:       dividendYield,
 		SellPrice:           sellPrice,
 		DaysToExpiry:        daysToExpiry,
 		GOPerShare:          goPerShare,
