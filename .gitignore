@@ -1,5 +1,11 @@
+# игнорируем приложения и бинарники (временно)
 start.bat
 *.exe
+
+# игнорируем БД
+arbitrage.db
+arbitrage.db-wal
+arbitrage.db-shm
 
 # Игнорируем файл с токеном (без расширения)
 token
