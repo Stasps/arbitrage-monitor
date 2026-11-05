@@ -18,7 +18,7 @@ import (
 
 // ========== КОНСТАНТЫ ==========
 const (
-	// Путь к файлу с токеном (относительно корня проекта)
+	// TokenFile - путь к файлу с токеном (относительно корня проекта)
 	TokenFile = "token"
 )
 
@@ -45,14 +45,12 @@ func main() {
 	log.Printf("Конфиг загружен: интервал %dс, комиссии %.2f%%/%.2f%%, множитель ГО %.2f",
 		cfg.UpdateInterval, cfg.CommissionStock*100, cfg.CommissionFuture*100, cfg.MarginMultiplier)
 
-	// БД
 	database, err := db.NewDB("arbitrage.db")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer database.Close()
 
-	// API клиент
 	client, err := api.NewTinkoffClient(token)
 	if err != nil {
 		log.Fatal(err)
@@ -62,17 +60,19 @@ func main() {
 	apiService := api.NewService(client, database, cfg.MarginMultiplier)
 	calc := calculator.NewCalculator(cfg.CommissionStock, cfg.CommissionFuture)
 
-	// === ЗАПУСК ВЕБ-СЕРВЕРА ===
-	srv := webserver.NewServer(cfg.MarginMultiplier)
+	// === Запуск веб-сервера ===
+	// Создаём канал для приёма новых пар из веб-интерфейса
+	addPairChan := make(chan models.Pair)
+
+	// Передаём множитель ГО, API-клиент и канал в веб-сервер
+	srv := webserver.NewServer(cfg.MarginMultiplier, client, addPairChan)
 	go func() {
 		if err := srv.Run(":" + strconv.Itoa(cfg.Port)); err != nil {
 			log.Printf("Ошибка веб-сервера: %v", err)
 		}
 	}()
 
-	// =====================================================
-	// ИНИЦИАЛИЗАЦИЯ ФЬЮЧЕРСОВ (получение FIGI через UID)
-	// =====================================================
+	// === Инициализация фьючерсов ===
 	log.Println("Инициализация фьючерсов (получение FIGI через UID)...")
 	for _, pair := range cfg.Pairs {
 		if pair.FutureUID != "" {
@@ -86,7 +86,7 @@ func main() {
 	}
 	log.Println("Инициализация фьючерсов завершена")
 
-	// Загрузка дивидендов (как было)
+	// === Загрузка дивидендов ===
 	log.Println("Загрузка дивидендов...")
 	for _, pair := range cfg.Pairs {
 		stockInstr, err := apiService.GetOrFetchInstrumentByTicker(pair.StockTicker, false)
@@ -126,20 +126,37 @@ func main() {
 	}
 	log.Println("Загрузка дивидендов завершена")
 
-	// Запускаем updater для каждой пары
+	// === Запуск мониторинга существующих пар ===
 	for _, pair := range cfg.Pairs {
 		log.Printf("Запуск пары: %s (%s/%s)", pair.ID, pair.StockTicker, pair.FutureTicker)
-		u := updater.NewUpdater(apiService, database, calc, cfg.UpdateInterval, srv) // <-- добавлен srv
+		u := updater.NewUpdater(apiService, database, calc, cfg.UpdateInterval, srv)
 		go u.Start(pair)
 	}
 
-	// Бесконечное ожидание
+	// === Слушаем канал новых пар ===
+	go func() {
+		for newPair := range addPairChan {
+			log.Printf("Добавлена новая пара: %s (%s/%s). Запускаем мониторинг...",
+				newPair.ID, newPair.StockTicker, newPair.FutureTicker)
+
+			// Небольшая пауза, чтобы конфиг успел сохраниться на диск
+			time.Sleep(500 * time.Millisecond)
+
+			u := updater.NewUpdater(apiService, database, calc, cfg.UpdateInterval, srv)
+			go u.Start(newPair)
+		}
+	}()
+
 	select {}
 }
 
 // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
-// readToken читает токен из файла
+// readToken читает токен из файла.
+// Параметры:
+//   - filename: путь к файлу с токеном
+//
+// Возвращает: строку с токеном и ошибку (если файл не найден или недоступен).
 func readToken(filename string) (string, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {

@@ -5,6 +5,7 @@ import "time"
 // Pair представляет связку акции и фьючерсного контракта
 type Pair struct {
 	ID           string `yaml:"id"`
+	Name         string `yaml:"name"` // человекочитаемое имя пары (например, "SBER 12.26")
 	StockTicker  string `yaml:"stock_ticker"`
 	FutureTicker string `yaml:"future_ticker"`
 	FutureUID    string `yaml:"future_uid"` // уникальный идентификатор фьючерса

@@ -40,3 +40,17 @@ func LoadConfig(path string) (*models.Config, error) {
 
 	return &cfg, nil
 }
+
+// SaveConfig сериализует конфигурацию в YAML и записывает её в файл.
+// Принимает:
+// - path: путь к файлу config.yaml
+// - cfg: указатель на конфигурацию для сохранения
+//
+// Возвращает: error - ошибка при сериализации или записи файла.
+func SaveConfig(path string, cfg *models.Config) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
