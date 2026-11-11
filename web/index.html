@@ -46,11 +46,28 @@
         }
         .risk-kpur { background: #fab387; color: #1e1e2f; }
         .risk-ksur { background: #a6e3a1; color: #1e1e2f; }
+                .search-link {
+            font-size: 14px;
+            background: #313244;
+            color: #89b4fa;
+            text-decoration: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            margin-left: 15px;
+            vertical-align: middle;
+            transition: background 0.2s;
+        }
+        .search-link:hover {
+            background: #45475a;
+        }
     </style>
 </head>
 <body>
-    <h1>📊 Арбитражный монитор <span id="risk-badge" class="risk-badge" style="display:none;"></span></h1>
-    <div id="status">⏳ Ожидание данных...</div>
+    <h1>
+        📊 Арбитражный монитор 
+        <span id="risk-badge" class="risk-badge" style="display:none;"></span>
+        <a href="/search" class="search-link">🔍 Поиск пар</a>
+    </h1>    <div id="status">⏳ Ожидание данных...</div>
     <table id="data-table">
         <thead id="table-head"></thead>
         <tbody id="table-body">
