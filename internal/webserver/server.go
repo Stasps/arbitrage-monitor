@@ -10,9 +10,11 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"arbitrage-monitor/internal/api"
 	"arbitrage-monitor/internal/config"
+	"arbitrage-monitor/internal/db"
 	"arbitrage-monitor/pkg/models"
 
 	"github.com/gorilla/websocket"
@@ -30,18 +32,22 @@ type Server struct {
 	dataStore        map[string]interface{} // key = PairID, value = данные пары
 	marginMultiplier float64
 	apiClient        *api.TinkoffClient // клиент для запросов к API Т-Инвестиций
+	db               *db.DB             // доступ к БД (для сохранения дивидендов)
 	addPairChan      chan models.Pair   // канал для передачи новых пар в main.go
+	deletePairChan   chan string        // канал для передачи ID удалённых пар в main.go
 	configMu         sync.Mutex         // защищает чтение/запись config.yaml
 }
 
-// NewServer создаёт новый сервер
+// NewServer создаёт новый сервер.
 // Принимает:
-// - marginMultiplier: множитель ГО для отображения уровня риска на сайте
-// - apiClient: клиент для запросов к API Т-Инвестиций (поиск фьючерсов, добавление пар)
-// - addPairChan: канал для передачи новых пар в main.go (запуск мониторинга "на лету")
+//   - marginMultiplier: множитель ГО для отображения уровня риска на сайте
+//   - apiClient: клиент для запросов к API Т-Инвестиций
+//   - database: подключение к БД (для сохранения дивидендов)
+//   - addPairChan: канал для передачи новых пар в main.go
+//   - deletePairChan: канал для передачи ID удалённых пар в main.go
 //
-// Возвращает: *Server
-func NewServer(marginMultiplier float64, apiClient *api.TinkoffClient, addPairChan chan models.Pair) *Server {
+// Возвращает: *Server.
+func NewServer(marginMultiplier float64, apiClient *api.TinkoffClient, database *db.DB, addPairChan chan models.Pair, deletePairChan chan string) *Server {
 	return &Server{
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
@@ -53,7 +59,9 @@ func NewServer(marginMultiplier float64, apiClient *api.TinkoffClient, addPairCh
 		dataStore:        make(map[string]interface{}),
 		marginMultiplier: marginMultiplier,
 		apiClient:        apiClient,
+		db:               database,
 		addPairChan:      addPairChan,
+		deletePairChan:   deletePairChan,
 	}
 }
 
@@ -65,6 +73,7 @@ func (s *Server) Run(addr string) error {
 	http.HandleFunc("/search", s.serveSearchPage)
 	http.HandleFunc("/api/search", s.handleAPISearch)
 	http.HandleFunc("/api/add-pair", s.handleAPIAddPair)
+	http.HandleFunc("/api/delete-pair", s.handleAPIDeletePair)
 
 	go s.runLoop()
 
@@ -107,15 +116,18 @@ func (s *Server) serveSearchPage(w http.ResponseWriter, r *http.Request) {
 
 // searchResultItem — элемент результата поиска фьючерсов для отдачи на фронтенд
 type searchResultItem struct {
-	Ticker string `json:"ticker"`
-	Name   string `json:"name"`
-	UID    string `json:"uid"`
+	Ticker      string  `json:"ticker"`
+	Name        string  `json:"name"`
+	UID         string  `json:"uid"`
+	FuturePrice float64 `json:"future_price"`
+	StockTicker string  `json:"stock_ticker"`
+	StockPrice  float64 `json:"stock_price"`
 }
 
 // handleAPISearch ищет фьючерсы по строке запроса через FindInstrument.
+// Отсекает фьючерсы с истёкшей датой экспирации и неликвиды (без цены).
 // Принимает: GET /api/search?q=<запрос>
-//
-// Возвращает: JSON-массив найденных фьючерсов [{"ticker":..., "name":..., "uid":...}].
+// Возвращает: JSON-массив найденных фьючерсов.
 func (s *Server) handleAPISearch(w http.ResponseWriter, r *http.Request) {
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query == "" {
@@ -135,12 +147,86 @@ func (s *Server) handleAPISearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	now := time.Now()
 	results := make([]searchResultItem, 0, len(resp.Instruments))
+
 	for _, inst := range resp.Instruments {
+		if inst == nil {
+			continue
+		}
+
+		// Получаем детали фьючерса, чтобы проверить дату экспирации
+		future, err := s.apiClient.GetFutureInfoByUID(inst.Uid)
+		if err != nil || future == nil {
+			log.Printf("Ошибка получения деталей фьючерса %s: %v", inst.Ticker, err)
+			continue
+		}
+		if future.ExpirationDate == nil || future.ExpirationDate.AsTime().Before(now) {
+			continue // пропускаем истёкшие
+		}
+		if future.BasicAsset == "" {
+			continue
+		}
+
+		// Получаем FIGI фьючерса для запроса цены
+		instDetails, err := s.apiClient.GetInstrumentByUID(inst.Uid)
+		if err != nil || instDetails == nil || instDetails.Figi == "" {
+			log.Printf("Ошибка получения FIGI для %s: %v", inst.Ticker, err)
+			continue
+		}
+		figi := instDetails.Figi
+
+		// Получаем базовую акцию
+		stockKind := investapi.InstrumentType_INSTRUMENT_TYPE_SHARE
+		shareResp, err := s.apiClient.GetInstrumentsServiceClient().FindInstrument(context.Background(),
+			&investapi.FindInstrumentRequest{
+				Query:          future.BasicAsset,
+				InstrumentKind: &stockKind,
+			})
+		if err != nil || shareResp == nil || len(shareResp.Instruments) == 0 {
+			log.Printf("Ошибка поиска базовой акции '%s': %v", future.BasicAsset, err)
+			continue
+		}
+		stock := shareResp.Instruments[0]
+		if stock == nil || stock.Figi == "" {
+			continue
+		}
+
+		// Получаем цены фьючерса и акции
+		prices, err := s.apiClient.GetLastPrices([]string{figi, stock.Figi})
+		if err != nil {
+			log.Printf("Ошибка получения цен для %s: %v", inst.Ticker, err)
+			continue
+		}
+
+		var futurePrice, stockPrice float64
+		for _, p := range prices {
+			if p == nil || p.Price == nil {
+				continue
+			}
+			price := float64(p.Price.Units) + float64(p.Price.Nano)/1e9
+			if p.Figi == figi {
+				futurePrice = price
+			}
+			if p.Figi == stock.Figi {
+				stockPrice = price
+			}
+		}
+
+		// Отсекаем неликвиды: если нет цены фьючерса или акции — пропускаем
+		// (например, старые расписки типа KCX5, которые не торгуются)
+		if futurePrice == 0 || stockPrice == 0 {
+			log.Printf("Пропускаем неликвид %s (futurePrice=%.2f, stockPrice=%.2f)", inst.Ticker, futurePrice, stockPrice)
+			continue
+		}
+
 		results = append(results, searchResultItem{
-			Ticker: inst.Ticker,
-			Name:   inst.Name,
-			UID:    inst.Uid,
+			Ticker:      inst.Ticker,
+			Name:        inst.Name,
+			UID:         inst.Uid,
+			FuturePrice: futurePrice,
+			StockTicker: stock.Ticker,
+			StockPrice:  stockPrice,
 		})
 	}
 
@@ -248,6 +334,7 @@ func (s *Server) handleAPIAddPair(w http.ResponseWriter, r *http.Request) {
 	// Для новой пары запускаем мониторинг "на лету" через канал в main.go
 	if isNew {
 		s.addPairChan <- pair
+		go s.loadDividendsForPair(pair)
 	}
 
 	log.Printf("Пара %s (%s/%s) %s", pair.ID, pair.StockTicker, pair.FutureTicker,
@@ -259,6 +346,82 @@ func (s *Server) handleAPIAddPair(w http.ResponseWriter, r *http.Request) {
 		"is_new": isNew,
 		"pair":   pair,
 	})
+}
+
+// loadDividendsForPair загружает дивиденды для акции из новой пары и сохраняет в БД.
+// Параметры:
+//   - pair: пара, для которой нужно загрузить дивиденды
+func (s *Server) loadDividendsForPair(pair models.Pair) {
+	stockInstr, err := s.apiClient.GetShareInfoByTicker(pair.StockTicker)
+	if err != nil {
+		log.Printf("Ошибка получения FIGI для %s: %v", pair.StockTicker, err)
+		return
+	}
+
+	divs, err := s.apiClient.GetDividends(stockInstr.Figi, time.Now().AddDate(-1, 0, 0), time.Now().AddDate(1, 0, 0))
+	if err != nil {
+		log.Printf("Ошибка получения дивидендов для %s: %v", pair.StockTicker, err)
+		return
+	}
+
+	for _, d := range divs {
+		div := &models.Dividend{
+			Ticker:      pair.StockTicker,
+			Dividend:    float64(d.DividendNet.Units) + float64(d.DividendNet.Nano)/1e9,
+			ExDate:      d.LastBuyDate.AsTime(),
+			PaymentDate: d.PaymentDate.AsTime(),
+			UpdatedAt:   time.Now(),
+		}
+		if err := s.db.SaveDividend(div); err != nil {
+			log.Printf("Ошибка сохранения дивиденда для %s: %v", pair.StockTicker, err)
+		}
+	}
+	log.Printf("Дивиденды для %s загружены и сохранены", pair.StockTicker)
+}
+
+// handleAPIDeletePair удаляет пару из config.yaml и отправляет ID в канал для остановки updater.
+// Принимает: POST /api/delete-pair с JSON {"pair_id": "..."}
+// Возвращает: JSON {"status": "ok"} или ошибку.
+func (s *Server) handleAPIDeletePair(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		PairID string `json:"pair_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Некорректный JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.PairID == "" {
+		http.Error(w, "Не указан pair_id", http.StatusBadRequest)
+		return
+	}
+
+	// Извлекаем id пары: "LKOH/LKZ6" -> "lkoh"
+	id := strings.ToLower(strings.Split(req.PairID, "/")[0])
+
+	s.configMu.Lock()
+	if err := config.DeletePair("config.yaml", id); err != nil {
+		s.configMu.Unlock()
+		http.Error(w, "Ошибка удаления из конфига: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.configMu.Unlock()
+
+	// Удаляем из dataStore, чтобы пара исчезла с сайта
+	s.mu.Lock()
+	delete(s.dataStore, req.PairID)
+	s.mu.Unlock()
+
+	// Отправляем в канал, чтобы main.go остановил updater
+	s.deletePairChan <- id
+
+	log.Printf("Пара %s удалена", req.PairID)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 // handleWebSocket обрабатывает подключения
@@ -273,7 +436,6 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 // UpdatePair обновляет данные по паре и отправляет всем клиентам полный массив
 func (s *Server) UpdatePair(pairID string, data interface{}) {
-	log.Printf("Обновление данных для пары: %s", pairID)
 	s.mu.Lock()
 	s.dataStore[pairID] = data
 	s.mu.Unlock()

@@ -18,6 +18,7 @@ type InputData struct {
 	LotFuture           int
 	Dividend            float64
 	DividendPaymentDate *time.Time
+	ExDate              *time.Time
 	ExpiryDate          time.Time
 	GO                  float64
 }
@@ -59,8 +60,8 @@ func (c *Calculator) Calculate(data InputData) Result {
 
 	// 3. Дивиденд очищенный (только если дата выплаты <= даты экспирации)
 	var dividendNet float64
-	if data.Dividend > 0 && data.DividendPaymentDate != nil &&
-		!data.DividendPaymentDate.After(data.ExpiryDate) {
+	if data.Dividend > 0 && data.ExDate != nil &&
+		!data.ExDate.After(data.ExpiryDate) {
 		dividendNet = data.Dividend * 0.87 // налог 13%
 	}
 

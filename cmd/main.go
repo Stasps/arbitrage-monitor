@@ -61,11 +61,16 @@ func main() {
 	calc := calculator.NewCalculator(cfg.CommissionStock, cfg.CommissionFuture)
 
 	// === Запуск веб-сервера ===
-	// Создаём канал для приёма новых пар из веб-интерфейса
+	// Канал для приёма новых пар из веб-интерфейса
 	addPairChan := make(chan models.Pair)
+	// Канал для удаления пар (передаём ID пары)
+	deletePairChan := make(chan string)
 
-	// Передаём множитель ГО, API-клиент и канал в веб-сервер
-	srv := webserver.NewServer(cfg.MarginMultiplier, client, addPairChan)
+	// Карта для хранения каналов остановки updater по ID пары
+	stopChans := make(map[string]chan struct{})
+
+	// Передаём множитель ГО, API-клиент, БД, каналы в веб-сервер
+	srv := webserver.NewServer(cfg.MarginMultiplier, client, database, addPairChan, deletePairChan)
 	go func() {
 		if err := srv.Run(":" + strconv.Itoa(cfg.Port)); err != nil {
 			log.Printf("Ошибка веб-сервера: %v", err)
@@ -129,7 +134,9 @@ func main() {
 	// === Запуск мониторинга существующих пар ===
 	for _, pair := range cfg.Pairs {
 		log.Printf("Запуск пары: %s (%s/%s)", pair.ID, pair.StockTicker, pair.FutureTicker)
-		u := updater.NewUpdater(apiService, database, calc, cfg.UpdateInterval, srv)
+		stopChan := make(chan struct{})
+		stopChans[pair.ID] = stopChan
+		u := updater.NewUpdater(apiService, database, calc, cfg.UpdateInterval, srv, stopChan)
 		go u.Start(pair)
 	}
 
@@ -142,8 +149,21 @@ func main() {
 			// Небольшая пауза, чтобы конфиг успел сохраниться на диск
 			time.Sleep(500 * time.Millisecond)
 
-			u := updater.NewUpdater(apiService, database, calc, cfg.UpdateInterval, srv)
+			stopChan := make(chan struct{})
+			stopChans[newPair.ID] = stopChan
+			u := updater.NewUpdater(apiService, database, calc, cfg.UpdateInterval, srv, stopChan)
 			go u.Start(newPair)
+		}
+	}()
+
+	// === Слушаем канал удаления пар ===
+	go func() {
+		for pairID := range deletePairChan {
+			log.Printf("Останавливаем мониторинг для пары: %s", pairID)
+			if stopChan, ok := stopChans[pairID]; ok {
+				close(stopChan) // отправляем сигнал остановки в updater
+				delete(stopChans, pairID)
+			}
 		}
 	}()
 

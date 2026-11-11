@@ -12,41 +12,69 @@ import (
 	"arbitrage-monitor/pkg/models"
 )
 
+// Updater - управляет циклом обновления данных для одной пары
 type Updater struct {
 	apiService *api.Service
 	db         *db.DB
 	calc       *calculator.Calculator
 	srv        *webserver.Server
 	interval   time.Duration
+	stopChan   chan struct{} // канал для остановки цикла обновления
 }
 
-func NewUpdater(apiService *api.Service, database *db.DB, calc *calculator.Calculator, interval int, srv *webserver.Server) *Updater {
+// NewUpdater создаёт новый updater.
+// Параметры:
+//   - apiService: сервисный слой для запросов к API Т-Инвестиций
+//   - database: подключение к БД
+//   - calc: калькулятор для расчётов
+//   - interval: интервал обновления в секундах
+//   - srv: веб-сервер для отправки данных клиентам
+//   - stopChan: канал для остановки updater (закрывается при удалении пары)
+//
+// Возвращает: *Updater.
+func NewUpdater(apiService *api.Service, database *db.DB, calc *calculator.Calculator, interval int, srv *webserver.Server, stopChan chan struct{}) *Updater {
 	return &Updater{
 		apiService: apiService,
 		db:         database,
 		calc:       calc,
 		srv:        srv,
 		interval:   time.Duration(interval) * time.Second,
+		stopChan:   stopChan,
 	}
 }
 
+// Start запускает бесконечный цикл обновления для пары.
+// Цикл останавливается при закрытии канала stopChan.
+// При панике в update — восстанавливается и логирует ошибку, не роняя приложение.
+// Параметры:
+//   - pair: пара (акция + фьючерс) для мониторинга
 func (u *Updater) Start(pair models.Pair) {
 	ticker := time.NewTicker(u.interval)
 	defer ticker.Stop()
 
 	for {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("Восстановление после паники в updater для %s: %v", pair.ID, r)
-				}
+		select {
+		case <-u.stopChan:
+			log.Printf("Остановка updater для %s", pair.ID)
+			return
+		case <-ticker.C:
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("Восстановление после паники в updater для %s: %v", pair.ID, r)
+					}
+				}()
+				u.update(pair)
 			}()
-			u.update(pair)
-		}()
-		<-ticker.C
+		}
 	}
 }
 
+// update выполняет одно обновление данных для пары.
+// Получает инструменты (акцию и фьючерс), проверяет поля, получает цены,
+// сохраняет их в БД и передаёт в processData для расчётов.
+// Параметры:
+//   - pair: пара (акция + фьючерс) для обновления
 func (u *Updater) update(pair models.Pair) {
 	// Защита от nil зависимостей
 	if u.apiService == nil || u.db == nil || u.calc == nil || u.srv == nil {
@@ -126,7 +154,8 @@ func (u *Updater) update(pair models.Pair) {
 		return
 	}
 
-	log.Printf("[%s] Получены цены из %s: акция %.2f, фьючерс %.2f", pair.ID, source, stockPrice, futurePrice)
+	// debug
+	// log.Printf("[%s] Получены цены из %s: акция %.2f, фьючерс %.2f", pair.ID, source, stockPrice, futurePrice)
 
 	// Сохраняем цены в БД
 	func() {
@@ -159,9 +188,13 @@ func (u *Updater) update(pair models.Pair) {
 	u.processData(stockInstr, futureInstr, stockPrice, futurePrice, source)
 }
 
-// processData выполняет расчёты, логирует и отправляет в WebSocket
-// Принимает: stockInstr, futureInstr - инструменты, stockPrice, futurePrice - цены,
-// source - источник цены ("orderbook" или "lastprice")
+// processData выполняет расчёты, логирует и отправляет в WebSocket.
+// Параметры:
+//   - stockInstr: инструмент акции
+//   - futureInstr: инструмент фьючерса
+//   - stockPrice: цена акции
+//   - futurePrice: цена фьючерса
+//   - source: источник цены ("orderbook" или "lastprice")
 func (u *Updater) processData(stockInstr, futureInstr *models.Instrument, stockPrice, futurePrice float64, source string) {
 	if futureInstr == nil || futureInstr.ExpiryDate == nil || futureInstr.Figi == "" {
 		log.Printf("Пропуск расчёта для %s: неполные данные фьючерса", stockInstr.Ticker)
@@ -186,15 +219,17 @@ func (u *Updater) processData(stockInstr, futureInstr *models.Instrument, stockP
 		LotFuture:           futureInstr.Lot,
 		Dividend:            dividend,
 		DividendPaymentDate: paymentDate,
+		ExDate:              exDate,
 		ExpiryDate:          *futureInstr.ExpiryDate,
 		GO:                  goVal,
 	})
 
-	log.Printf("=== %s / %s ===", stockInstr.Ticker, futureInstr.Ticker)
-	log.Printf("Акция: %.2f, Фьюч(акц): %.2f, Спред: %.2f", stockPrice, result.PriceFuturePerShare, result.Spread)
-	log.Printf("Див.чист: %.2f, Цена прод: %.2f, Дней: %d", result.DividendNet, result.SellPrice, result.DaysToExpiry)
-	log.Printf("Доходность: %.4f%%, Годовая: %.4f%%", result.ReturnPct*100, result.AnnualReturnPct*100)
-	log.Printf("ГО/акц: %.2f, Инвест: %.2f", result.GOPerShare, result.InvestedCapital)
+	//debug
+	//log.Printf("=== %s / %s ===", stockInstr.Ticker, futureInstr.Ticker)
+	//log.Printf("Акция: %.2f, Фьюч(акц): %.2f, Спред: %.2f", stockPrice, result.PriceFuturePerShare, result.Spread)
+	//log.Printf("Див.чист: %.2f, Цена прод: %.2f, Дней: %d", result.DividendNet, result.SellPrice, result.DaysToExpiry)
+	//log.Printf("Доходность: %.4f%%, Годовая: %.4f%%", result.ReturnPct*100, result.AnnualReturnPct*100)
+	//log.Printf("ГО/акц: %.2f, Инвест: %.2f", result.GOPerShare, result.InvestedCapital)
 
 	pairID := stockInstr.Ticker + "/" + futureInstr.Ticker
 	data := map[string]interface{}{
@@ -216,8 +251,12 @@ func (u *Updater) processData(stockInstr, futureInstr *models.Instrument, stockP
 	u.srv.UpdatePair(pairID, data)
 }
 
-// formatDatePtr форматирует *time.Time в строку "2 янв" (день + сокращённый месяц на русском)
-// или пустую строку, если nil. Год не выводится — для краткости.
+// formatDatePtr форматирует *time.Time в строку "2 янв" (день + сокращённый месяц на русском).
+// Возвращает пустую строку, если t == nil. Год не выводится — для краткости.
+// Параметры:
+//   - t: указатель на время
+//
+// Возвращает: строку в формате "2 янв" или "".
 func formatDatePtr(t *time.Time) string {
 	if t == nil {
 		return ""
@@ -229,7 +268,12 @@ func formatDatePtr(t *time.Time) string {
 	return fmt.Sprintf("%d %s", t.Day(), months[t.Month()-1])
 }
 
-// formatDateISOPtr возвращает ISO-дату (YYYY-MM-DD) для сортировки, или "" если nil
+// formatDateISOPtr возвращает ISO-дату (YYYY-MM-DD) для сортировки.
+// Возвращает пустую строку, если t == nil.
+// Параметры:
+//   - t: указатель на время
+//
+// Возвращает: строку в формате "YYYY-MM-DD" или "".
 func formatDateISOPtr(t *time.Time) string {
 	if t == nil {
 		return ""

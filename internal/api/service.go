@@ -201,26 +201,28 @@ func (s *Service) GetLastPrices(figis []string) ([]*investapi.LastPrice, error) 
 func (s *Service) GetBestPrices(stockFigi, stockUid, futureFigi, futureUid string) (stockPrice, futurePrice float64, source string, err error) {
 	// Получаем стакан для акции
 	stockOrderBook, err := s.client.GetOrderBook(stockFigi)
-	if err != nil {
+	if err != nil || stockOrderBook == nil {
 		log.Printf("Ошибка получения стакана для акции %s: %v", stockFigi, err)
 		return s.getLastPricesFallback(stockFigi, stockUid, futureFigi, futureUid)
 	}
 
 	// Получаем стакан для фьючерса
 	futureOrderBook, err := s.client.GetOrderBook(futureFigi)
-	if err != nil {
+	if err != nil || futureOrderBook == nil {
 		log.Printf("Ошибка получения стакана для фьючерса %s: %v", futureFigi, err)
 		return s.getLastPricesFallback(stockFigi, stockUid, futureFigi, futureUid)
 	}
 
 	// Проверяем, что в стакане акции есть заявки на продажу (asks)
-	if len(stockOrderBook.Asks) == 0 {
+	// и что цена не nil (защита от паники на старых расписках)
+	if len(stockOrderBook.Asks) == 0 || stockOrderBook.Asks[0] == nil || stockOrderBook.Asks[0].Price == nil {
 		log.Printf("Предупреждение: стакан акции %s пуст (нет asks), используем GetLastPrices", stockFigi)
 		return s.getLastPricesFallback(stockFigi, stockUid, futureFigi, futureUid)
 	}
 
 	// Проверяем, что в стакане фьючерса есть заявки на покупку (bids)
-	if len(futureOrderBook.Bids) == 0 {
+	// и что цена не nil
+	if len(futureOrderBook.Bids) == 0 || futureOrderBook.Bids[0] == nil || futureOrderBook.Bids[0].Price == nil {
 		log.Printf("Предупреждение: стакан фьючерса %s пуст (нет bids), используем GetLastPrices", futureFigi)
 		return s.getLastPricesFallback(stockFigi, stockUid, futureFigi, futureUid)
 	}
@@ -255,7 +257,7 @@ func (s *Service) getLastPricesFallback(stockFigi, stockUid, futureFigi, futureU
 
 	var stockFound, futureFound bool
 	for _, p := range prices {
-		if p == nil {
+		if p == nil || p.Price == nil { // <-- ЗАЩИТА ОТ NIL
 			continue
 		}
 		price := float64(p.Price.Units) + float64(p.Price.Nano)/1e9

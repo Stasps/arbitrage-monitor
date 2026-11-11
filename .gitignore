@@ -6,6 +6,7 @@ start.bat
 arbitrage.db
 arbitrage.db-wal
 arbitrage.db-shm
+.obsidian/
 
 # Игнорируем файл с токеном (без расширения)
 token

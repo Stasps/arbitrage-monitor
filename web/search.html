@@ -27,9 +27,11 @@
 <body>
     <div class="container">
         <h1>🔍 Поиск фьючерсов</h1>
-        
+        <p style="text-align: center; color: #a6adc8; font-size: 14px; margin-bottom: 20px;">
+            Введите тикер или название <b>фьючерса</b>. Примеры: <b>SRU6</b> (Сбер), <b>LKZ6</b> (Лукойл), <b>X5U6</b> (X5).
+        </p>
         <div class="search-box">
-            <input type="text" id="query" placeholder="Введите тикер или название (например, SBER или Сбербанк)" autofocus />
+            <input type="text" id="query" placeholder="Тикер или название фьючерса (например, SRU6, Сбербанк)" autofocus />
             <button id="search-btn" onclick="search()">Искать</button>
         </div>
 
@@ -80,9 +82,9 @@
                     div.className = 'result-item';
                     div.innerHTML = 
                         '<div class="result-info">' +
-                            '<div class="result-title">' + item.ticker + '</div>' +
-                            '<div>' + item.name + '</div>' +
-                            '<div class="result-uid">UID: ' + item.uid + '</div>' +
+                            '<div class="result-title">' + item.ticker + ' (' + item.name + ')</div>' +
+                            '<div>Фьючерс: ' + (item.future_price ? item.future_price.toFixed(2) + ' ₽' : '—') + '</div>' +
+                            '<div>Акция: ' + item.stock_ticker + ' — ' + (item.stock_price ? item.stock_price.toFixed(2) + ' ₽' : '—') + '</div>' +
                         '</div>' +
                         '<button onclick="addPair(\'' + item.uid + '\', \'' + item.ticker + '\', this)">Добавить</button>';
                     resultsDiv.appendChild(div);
@@ -113,11 +115,10 @@
                 }
 
                 const result = await res.json();
-                statusDiv.textContent = '✅ Пара ' + result.pair.Name + ' успешно добавлена!';
+                statusDiv.textContent = '✅ Пара ' + (result.pair ? result.pair.Name : ticker) + ' успешно добавлена!';
                 statusDiv.className = 'status success';
-                
-                // Переход на главную через 1 секунду
-                setTimeout(() => { window.location.href = '/'; }, 1000);
+                btn.textContent = 'Добавлено';
+                // Никакого редиректа — остаёмся на странице
             } catch (e) {
                 btn.disabled = false;
                 btn.textContent = 'Добавить';

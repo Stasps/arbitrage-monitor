@@ -54,3 +54,26 @@ func SaveConfig(path string, cfg *models.Config) error {
 	}
 	return os.WriteFile(path, data, 0644)
 }
+
+// DeletePair удаляет пару из конфигурации по её ID.
+// Параметры:
+//   - path: путь к файлу config.yaml
+//   - pairID: идентификатор пары для удаления
+//
+// Возвращает: error - ошибка при загрузке или сохранении.
+func DeletePair(path string, pairID string) error {
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		return err
+	}
+
+	newPairs := make([]models.Pair, 0, len(cfg.Pairs))
+	for _, p := range cfg.Pairs {
+		if p.ID != pairID {
+			newPairs = append(newPairs, p)
+		}
+	}
+	cfg.Pairs = newPairs
+
+	return SaveConfig(path, cfg)
+}
